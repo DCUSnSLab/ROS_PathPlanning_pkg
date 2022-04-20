@@ -12,8 +12,6 @@ from visualization_msgs.msg import MarkerArray, Marker
 from std_msgs.msg import ColorRGBA, Header
 from nav_msgs.msg import Odometry
 
-import cProfile
-
 class Graph(object):
 	def __init__(self, init_graph):
 		self.nodes = [str(n) for n in range(len(init_graph))]
@@ -52,22 +50,51 @@ class Graph(object):
 
 class Dijkstra():
 	def __init__(self, vertices):
-		print("class Dijkstra():")
-		self.vertices = vertices
+		self.vertices = vertices # 원본 json 파일
 		self.init_graph = {}
 
-		for idx, vertex in enumerate(vertices):
+		self.construct_graph()
+
+	def construct_graph(self):
+		for idx, vertex in enumerate(self.vertices):
 			self.init_graph[str(idx)] = {}
 			if vertex["adjacent"]:  # 인접한 Vertex가 있는 경우
 				for adjacent in vertex["adjacent"]:  # 각 인접 vertex에 대한 dict 생성 및 거리값 초기화
 					self.init_graph[str(idx)][adjacent] = self.calcdistance(idx, adjacent)
 
 		self.graph = Graph(self.init_graph)
-		print("Dijkstra() called")
 
 		# self.graph_visualize(vertices, path) # 생성된 경로 시각화 함수
-	def insert_vertex(self):
-		pass
+	def insert_vertex(self, pos, target_vertex, adjacent_vertex_idx):
+		"""
+		self.init_graph에 현재 위치, 목표 위치 값을 추가한 뒤
+		self.graph에 새로 생성된 그래프를 추가
+		"""
+		# print(pos)
+		# print(target_vertex)
+		# print(adjacent_vertex_idx)
+		print("self.init_graph before")
+		print(self.init_graph)
+		print(len(self.init_graph))
+		print("str(adjacent_vertex_idx)")
+		print(str(adjacent_vertex_idx))
+
+		print("target_vertex")
+		print(target_vertex)
+		print("adjacent_vertex_idx")
+		print(adjacent_vertex_idx)
+		print("self.vertices[adjacent_vertex_idx]")
+		print(self.vertices[adjacent_vertex_idx])
+		# self.init_graph[str(pos)] = {}
+		self.init_graph[str(len(self.init_graph))] = {}
+		print("self.init_graph mid")
+		print(self.init_graph)
+		print(len(self.init_graph))
+		# self.init_graph[str(pos)][str(adjacent_vertex_idx)] = self.calcdistance_between_vertex(target_vertex, self.vertices[adjacent_vertex_idx])
+		self.init_graph[str(len(self.init_graph) - 1)][str(adjacent_vertex_idx)] = self.calcdistance_between_vertex(target_vertex, self.vertices[adjacent_vertex_idx])
+		print("self.init_graph after")
+		print(self.init_graph)
+		print(len(self.init_graph))
 
 	def find_nearest_vertex(self, target_vertex):
 
@@ -129,6 +156,12 @@ class Dijkstra():
 		path = []
 		refined_path = list()
 		node = target_node
+		print("start_node")
+		print(start_node)
+		print("target_node")
+		print(target_node)
+		print("previous_nodes")
+		print(previous_nodes)
 
 		while node != start_node:  # 시작 노드에 도달할 때 까지 반복
 			path.append(node)
@@ -136,8 +169,8 @@ class Dijkstra():
 
 		path.append(start_node)
 
-		print("최단 경로에 대한 거리값 : {}.".format(shortest_path[target_node]))
-		print(" -> ".join(reversed(path)))
+		# print("최단 경로에 대한 거리값 : {}.".format(shortest_path[target_node]))
+		# print(" -> ".join(reversed(path)))
 		for vertex in reversed(path):
 			refined_path.append(vertex)
 		return refined_path
@@ -169,9 +202,7 @@ class DefinedWaypoints():
 		with open(self.json_file_path) as f:
 			json_input = json.load(f)
 
-		print("self.dijkstra = Dijkstra(json_input) before")
 		self.dijkstra = Dijkstra(json_input)
-		print("self.dijkstra = Dijkstra(json_input) after")
 
 		for vertex in json_input:
 			self.pointlist.append(vertex["xy"])
@@ -185,22 +216,35 @@ class DefinedWaypoints():
 		rospy.spin()
 
 	def goal_point_callback(self, data):
-		print("data")
-		print(data)
-		refined_data = {
+		goal_position = {
 			"xy": [data.pose.position.x, data.pose.position.y],
 			"adjacent": None
 		}
-		start_nearest_vertex = self.dijkstra.find_nearest_vertex(refined_data)
-		print(start_nearest_vertex)
+		current_position = {
+			"xy": [self.start_vertex.pose.pose.position.x, self.start_vertex.pose.pose.position.y],
+			"adjacent": None
+		}
+		start_nearest_vertex = self.dijkstra.find_nearest_vertex(goal_position)
+		# print(start_nearest_vertex)
 		print(self.dijkstra.vertices[start_nearest_vertex])
-		goal_nearest_vertex = self.dijkstra.find_nearest_vertex(refined_data)
+		goal_position["adjacent"] = str(start_nearest_vertex)
+		goal_nearest_vertex = self.dijkstra.find_nearest_vertex(current_position)
+		# print(goal_nearest_vertex)
+		print(self.dijkstra.vertices[goal_nearest_vertex])
+		current_position["adjacent"] = str(goal_nearest_vertex)
 		"""
 		현재 차량의 좌표와 가장 가까운 Vertex를 고른 뒤,
 		해당 Vertex ~ 목표와 가장 가까운 Vertex 까지의 경로 계산
 		그러나 원본 Graph에 영향이 없는 한도에서 진행해야 함.
 		"""
-		self.dijkstra.calc_path("0", "1")
+		self.dijkstra.insert_vertex("start", current_position, start_nearest_vertex)
+		self.dijkstra.insert_vertex("goal", goal_position, goal_nearest_vertex)
+		self.dijkstra.construct_graph()
+
+		# self.dijkstra.calc_path("start", "goal")
+		print("Current len", len(self.dijkstra.init_graph))
+		self.dijkstra.calc_path(str(len(self.dijkstra.init_graph) - 2), str(len(self.dijkstra.init_graph) - 1))
+		# self.dijkstra.calc_path("0", "20")
 		path = self.dijkstra.get_path()
 		print(path)
 
@@ -255,6 +299,3 @@ if __name__=="__main__":
 		DefinedWaypoints()
 	except:
 		pass
-
-	# while True:
-	# 	dw.publish()
