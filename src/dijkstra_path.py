@@ -52,7 +52,6 @@ class Dijkstra():
 	def __init__(self, vertices):
 		self.vertices = vertices # 원본 json 파일
 		self.init_graph = {}
-
 		self.construct_graph()
 
 	def construct_graph(self):
@@ -65,47 +64,29 @@ class Dijkstra():
 		self.graph = Graph(self.init_graph)
 
 		# self.graph_visualize(vertices, path) # 생성된 경로 시각화 함수
-	def insert_vertex(self, pos, target_vertex, adjacent_vertex_idx):
+	def insert_vertex(self, target_vertex, adjacent_vertex_idx, adjacent_vertex):
 		"""
 		self.init_graph에 현재 위치, 목표 위치 값을 추가한 뒤
 		self.graph에 새로 생성된 그래프를 추가
 		"""
-		# print(pos)
-		# print(target_vertex)
-		# print(adjacent_vertex_idx)
-		print("self.init_graph before")
-		print(self.init_graph)
-		print(len(self.init_graph))
-		print("str(adjacent_vertex_idx)")
-		print(str(adjacent_vertex_idx))
-
-		print("target_vertex")
-		print(target_vertex)
-		print("adjacent_vertex_idx")
-		print(adjacent_vertex_idx)
-		print("self.vertices[adjacent_vertex_idx]")
-		print(self.vertices[adjacent_vertex_idx])
-		# self.init_graph[str(pos)] = {}
 		self.init_graph[str(len(self.init_graph))] = {}
-		print("self.init_graph mid")
-		print(self.init_graph)
-		print(len(self.init_graph))
-		# self.init_graph[str(pos)][str(adjacent_vertex_idx)] = self.calcdistance_between_vertex(target_vertex, self.vertices[adjacent_vertex_idx])
-		self.init_graph[str(len(self.init_graph) - 1)][str(adjacent_vertex_idx)] = self.calcdistance_between_vertex(target_vertex, self.vertices[adjacent_vertex_idx])
-		print("self.init_graph after")
-		print(self.init_graph)
-		print(len(self.init_graph))
+		self.init_graph[str(len(self.init_graph) - 1)][str(adjacent_vertex_idx)] = self.calcdistance_between_vertex(target_vertex, adjacent_vertex)
 
 	def find_nearest_vertex(self, target_vertex):
-
+		"""
+		target_vertex와 가장 근접한 vertex를 찾은 뒤
+		해당 vertex의 index와 실제 값을 리턴한다.
+		"""
 		distance = sys.maxsize
+		nearest_vertex = None
 		index = None
 		for idx, vertex in enumerate(self.vertices):
 			result = self.calcdistance_between_vertex(target_vertex, vertex)
 			if result < distance:
 				distance = result
+				nearest_vertex = self.vertices[idx]
 				index = idx
-		return index
+		return nearest_vertex, index
 
 	def calc_path(self, start, goal):
 		previous_nodes, shortest_path = self.dijkstra_algorithm(graph=self.graph, start_node=start)
@@ -156,12 +137,6 @@ class Dijkstra():
 		path = []
 		refined_path = list()
 		node = target_node
-		print("start_node")
-		print(start_node)
-		print("target_node")
-		print(target_node)
-		print("previous_nodes")
-		print(previous_nodes)
 
 		while node != start_node:  # 시작 노드에 도달할 때 까지 반복
 			path.append(node)
@@ -169,11 +144,10 @@ class Dijkstra():
 
 		path.append(start_node)
 
-		# print("최단 경로에 대한 거리값 : {}.".format(shortest_path[target_node]))
-		# print(" -> ".join(reversed(path)))
 		for vertex in reversed(path):
 			refined_path.append(vertex)
-		return refined_path
+		# return refined_path
+		return path
 
 	def get_path(self):
 		return self.path
@@ -183,7 +157,7 @@ class Dijkstra():
 		return math.sqrt(math.pow(start["xy"][0] - dst["xy"][0], 2) + math.pow(start["xy"][1] - dst["xy"][1], 2))
 
 	def calcdistance(self, start, dst):
-		""" 입력받은 start, dst Vertex의 거리 값 계산 후 리턴"""
+		""" 입력받은 start, dst Vertex의 index 값을 사용하여 거리 값 계산 후 리턴"""
 		return math.sqrt(math.pow(self.vertices[int(start)]["xy"][0] - self.vertices[int(dst)]["xy"][0], 2) + math.pow(self.vertices[int(start)]["xy"][1] - self.vertices[int(dst)]["xy"][1], 2))
 
 class DefinedWaypoints():
@@ -207,7 +181,6 @@ class DefinedWaypoints():
 		for vertex in json_input:
 			self.pointlist.append(vertex["xy"])
 
-
 		for idx, point in enumerate(self.pointlist):
 			self.add_waypoint(idx, point)
 
@@ -224,29 +197,24 @@ class DefinedWaypoints():
 			"xy": [self.start_vertex.pose.pose.position.x, self.start_vertex.pose.pose.position.y],
 			"adjacent": None
 		}
-		start_nearest_vertex = self.dijkstra.find_nearest_vertex(goal_position)
-		# print(start_nearest_vertex)
-		print(self.dijkstra.vertices[start_nearest_vertex])
-		goal_position["adjacent"] = str(start_nearest_vertex)
-		goal_nearest_vertex = self.dijkstra.find_nearest_vertex(current_position)
-		# print(goal_nearest_vertex)
-		print(self.dijkstra.vertices[goal_nearest_vertex])
-		current_position["adjacent"] = str(goal_nearest_vertex)
-		"""
-		현재 차량의 좌표와 가장 가까운 Vertex를 고른 뒤,
-		해당 Vertex ~ 목표와 가장 가까운 Vertex 까지의 경로 계산
-		그러나 원본 Graph에 영향이 없는 한도에서 진행해야 함.
-		"""
-		self.dijkstra.insert_vertex("start", current_position, start_nearest_vertex)
-		self.dijkstra.insert_vertex("goal", goal_position, goal_nearest_vertex)
+		start_nearest_vertex, start_nearest_vertex_idx = self.dijkstra.find_nearest_vertex(goal_position)
+		goal_position["adjacent"] = str(start_nearest_vertex_idx)
+
+		goal_nearest_vertex, goal_nearest_vertex_idx = self.dijkstra.find_nearest_vertex(current_position)
+		current_position["adjacent"] = str(goal_nearest_vertex_idx)
+
+		self.dijkstra.insert_vertex(current_position, start_nearest_vertex_idx, start_nearest_vertex)
+		self.dijkstra.insert_vertex(goal_position, goal_nearest_vertex_idx, goal_nearest_vertex)
 		self.dijkstra.construct_graph()
 
-		# self.dijkstra.calc_path("start", "goal")
-		print("Current len", len(self.dijkstra.init_graph))
 		self.dijkstra.calc_path(str(len(self.dijkstra.init_graph) - 2), str(len(self.dijkstra.init_graph) - 1))
-		# self.dijkstra.calc_path("0", "20")
+
 		path = self.dijkstra.get_path()
 		print(path)
+
+		# 경로 생성 완료 후 생성된 시작 지점과 도착 지점은 제거한다.
+		del(self.dijkstra.init_graph[str(len(self.dijkstra.init_graph) - 1)])
+		del(self.dijkstra.init_graph[str(len(self.dijkstra.init_graph) - 1)])
 
 	def current_pos_callback(self, data):
 		self.start_vertex = data
