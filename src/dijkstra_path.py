@@ -4,7 +4,6 @@
 import rospy
 import json
 import math
-import os
 import sys
 
 from geometry_msgs.msg import PoseStamped, PolygonStamped, Point32
@@ -164,6 +163,7 @@ class DefinedWaypoints():
 	def __init__(self):
 		print("DefinedWaypoints() __init__ called")
 		self.pub = rospy.Publisher("/defined_vertices", MarkerArray, queue_size=1)
+		self.path_pub = rospy.Publisher("/refined_vertices", MarkerArray, queue_size=1)
 		self.waypointlist = MarkerArray()
 		self.rate = rospy.Rate(1)
 
@@ -182,7 +182,7 @@ class DefinedWaypoints():
 			self.pointlist.append(vertex["xy"])
 
 		for idx, point in enumerate(self.pointlist):
-			self.add_waypoint(idx, point)
+			self.waypointlist.markers.append(self.add_waypoint(idx, point))
 
 		self.nav_goal_sub = rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.goal_point_callback, queue_size=1)
 		self.nav_start_sub = rospy.Subscriber("/odom", Odometry, self.current_pos_callback, queue_size=1)
@@ -209,8 +209,29 @@ class DefinedWaypoints():
 
 		self.dijkstra.calc_path(str(len(self.dijkstra.init_graph) - 2), str(len(self.dijkstra.init_graph) - 1))
 
+		# 생성된 경로 값 가져오기
 		path = self.dijkstra.get_path()
-		print(path)
+
+		# 생성된 경로 path의 x, y 좌표만을 저장하기 위한 리스트 변수
+		refined_path = list()
+
+		# 생성된 경로 path의 x, y 좌표를 사용하여 생성된 Marker() 메시지를 저장하기 위한 변수
+		refined_waypointlist = MarkerArray()
+
+		# 생성된 경로 path를 사용하여 (x, y) 좌표 형태로 기록된 리스트를 만든다.
+		for idx in path[1:len(path) - 1]:
+			print(idx)
+			refined_path.append(self.dijkstra.vertices[int(idx)]["xy"])
+
+		refined_path.insert(0, current_position["xy"])
+		refined_path.append(goal_position["xy"])
+
+		for idx, point in enumerate(refined_path):
+			refined_waypointlist.markers.append(self.add_waypoint(idx, point))
+
+		self.path_pub.publish(refined_waypointlist)
+
+		# matplotlib를 통한 시각화
 
 		# 경로 생성 완료 후 생성된 시작 지점과 도착 지점은 제거한다.
 		del(self.dijkstra.init_graph[str(len(self.dijkstra.init_graph) - 1)])
@@ -223,6 +244,9 @@ class DefinedWaypoints():
 		self.pub.publish(self.waypointlist)
 
 	def add_waypoint(self, idx, point):
+		"""
+		Marker() 메시지 자료형을 리턴하는 함수
+		"""
 		waypoint = Marker()
 
 		waypoint.ns = str(idx)  # Marker namespace
@@ -251,7 +275,9 @@ class DefinedWaypoints():
 		pt.y = point[1]
 		pt.z = 0.0 # Waypoint의 z축은 현재는 불필요함
 		waypoint.points.append(pt)
-		self.waypointlist.markers.append(waypoint)
+
+		return waypoint
+		# self.waypointlist.markers.append(waypoint)
 
 	def make_header(self, frame_id, stamp=None):
 		if stamp == None:
