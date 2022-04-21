@@ -254,19 +254,19 @@ class DefinedWaypoints():
 		waypoint.text = str(idx)  # Marker namespace
 
 		waypoint.type = 8  # line strip
-		waypoint.lifetime = rospy.Duration.from_sec(100)
+		waypoint.lifetime = rospy.Duration.from_sec(5)
 		waypoint.header = self.make_header("map")
 
-		waypoint.action = 0 # ?
+		waypoint.action = 0 # 정화한 용도를 모르겠음
 
 		# Set waypoint size
-		waypoint.scale.x = 0.5
-		waypoint.scale.y = 0.5
+		waypoint.scale.x = 0.7
+		waypoint.scale.y = 0.7
 		waypoint.scale.z = 0.1
 
 		# Set waypoint color, alpha
-		waypoint.color.r = 0.85
-		waypoint.color.g = 0.25
+		waypoint.color.r = 0.25
+		waypoint.color.g = 1.0
 		waypoint.color.b = 0.25
 		waypoint.color.a = 1.0
 
@@ -274,6 +274,7 @@ class DefinedWaypoints():
 		pt.x = point[0]
 		pt.y = point[1]
 		pt.z = 0.0 # Waypoint의 z축은 현재는 불필요함
+
 		waypoint.points.append(pt)
 
 		return waypoint
