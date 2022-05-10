@@ -15,12 +15,17 @@ hdl_localization을 통해 차량의 현재 위치를 확인할 수 있는 상�
 
 ## Subscribe
 
-- **/odom**
+- **/odom** (nav_msgs/Odometry)
+
+  - 지도 데이터 내 차량의 현재 위치
 
 ## Publish
 
-- **/defined_vertices**
+- **/defined_vertices** (visualization_msgs/MarkerArray)
 
-- **/refined_vertices**
+  - JSON 파일 내 정의된 정점 목록
 
+- **/refined_vertices** (visualization_msgs/MarkerArray)
+
+  - /odom 토픽을 통한 현재 위치, Rviz에서 "2D Pose Estimate" 를 통해 지정한 목적지, 사전 정의된 정점을 바탕으로 생성한 경로로
 
