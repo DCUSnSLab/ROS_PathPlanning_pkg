@@ -1,7 +1,12 @@
 # ROS_PathPlanning_pkg
 Pathplanning on specified vertices
 
-### hdl Graph-SLAM 기반 셋업
+## hdl Graph-SLAM 기반 셋업
+
+### 테스트트 환경
+
+ - Ubuntu 18.04
+    - ROS Melodic Morenia
 
 아래 링크에서 현재 사용중인 ROS 버전에 맞는 hdl localization 설치 및 동작 확인
 
