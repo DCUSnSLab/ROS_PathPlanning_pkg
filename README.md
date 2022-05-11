@@ -3,7 +3,7 @@ Pathplanning on specified vertices
 
 ## hdl Graph-SLAM 기반 셋업
 
-### 테스트트 환경
+### 테스트 환경
 
  - Ubuntu 18.04
     - ROS Melodic Morenia
