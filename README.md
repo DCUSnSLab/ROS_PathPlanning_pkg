@@ -7,6 +7,14 @@ Pathplanning on specified vertices
 
 https://github.com/koide3/hdl_localization
 
+hdl localization의 hdl_localization.launch 파일의 마지막 부분을 아래와 같이 수정
+
+![image](https://user-images.githubusercontent.com/40351426/167768765-bb9f5361-6eda-45ba-9336-10d662cef7f1.png)
+
+<node pkg="path_planning" type="dijkstra_path.py" name="path_planning" output="screen" >
+    <param name="json_file" value="$(find path_planning)/data/20211104_map.json" />
+</node>
+
 이후 동일한 워크스페이스의 src 경로에서 PathPlanning 패키지를 clone
 
 hdl_localization을 통해 차량의 현재 위치를 확인할 수 있는 상황에서 아래와 같이 goal 지점을 지정
