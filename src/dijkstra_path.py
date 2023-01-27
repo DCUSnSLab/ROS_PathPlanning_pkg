@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
 import rospy
@@ -49,19 +49,28 @@ class Graph(object):
 
 class Dijkstra():
 	def __init__(self, vertices):
+		print("Dijkstra() __init__ called.")
 		self.vertices = vertices # 원본 json 파일
 		self.init_graph = {}
 		self.construct_graph()
 
 	def construct_graph(self):
+		print("construct_graph() called.")
 		for idx, vertex in enumerate(self.vertices):
 			self.init_graph[str(idx)] = {}
+			print("for loop")
+			print(vertex["adjacent"])
 			if vertex["adjacent"]:  # 인접한 Vertex가 있는 경우
+				print("if vertex['adjacent']:")
 				for adjacent in vertex["adjacent"]:  # 각 인접 vertex에 대한 dict 생성 및 거리값 초기화
+					print("adjacent")
+					print(adjacent)
+					print("for adjacent in vertex")
 					self.init_graph[str(idx)][adjacent] = self.calcdistance(idx, adjacent)
+					print("calcdistance end")
 
 		self.graph = Graph(self.init_graph)
-
+		print("construct_graph() end.")
 		# self.graph_visualize(vertices, path) # 생성된 경로 시각화 함수
 	def insert_vertex(self, target_vertex, adjacent_vertex_idx, adjacent_vertex):
 		"""
@@ -156,6 +165,7 @@ class Dijkstra():
 		return math.sqrt(math.pow(start["xy"][0] - dst["xy"][0], 2) + math.pow(start["xy"][1] - dst["xy"][1], 2))
 
 	def calcdistance(self, start, dst):
+		print("calcdistance() called.")
 		""" 입력받은 start, dst Vertex의 index 값을 사용하여 거리 값 계산 후 리턴"""
 		return math.sqrt(math.pow(self.vertices[int(start)]["xy"][0] - self.vertices[int(dst)]["xy"][0], 2) + math.pow(self.vertices[int(start)]["xy"][1] - self.vertices[int(dst)]["xy"][1], 2))
 
@@ -176,16 +186,26 @@ class DefinedWaypoints():
 		with open(self.json_file_path) as f:
 			json_input = json.load(f)
 
+		print("json input")
+		print(json_input)
+
 		self.dijkstra = Dijkstra(json_input)
+
+		print("test2*********************")
 
 		for vertex in json_input:
 			self.pointlist.append(vertex["xy"])
 
+		print("test3*********************")
+
 		for idx, point in enumerate(self.pointlist):
 			self.waypointlist.markers.append(self.add_waypoint(idx, point))
 
+		print("test4*********************")
+
 		self.nav_goal_sub = rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.goal_point_callback, queue_size=1)
 		self.nav_start_sub = rospy.Subscriber("/odom", Odometry, self.current_pos_callback, queue_size=1)
+		print("DefinedWaypoints() __init__ end")
 		rospy.spin()
 
 	def goal_point_callback(self, data):
