@@ -191,17 +191,12 @@ class DefinedWaypoints():
 
 		self.dijkstra = Dijkstra(json_input)
 
-		print("test2*********************")
 
 		for vertex in json_input:
 			self.pointlist.append(vertex["xy"])
 
-		print("test3*********************")
-
 		for idx, point in enumerate(self.pointlist):
 			self.waypointlist.markers.append(self.add_waypoint(idx, point))
-
-		print("test4*********************")
 
 		self.nav_goal_sub = rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.goal_point_callback, queue_size=1)
 		self.nav_start_sub = rospy.Subscriber("/odom", Odometry, self.current_pos_callback, queue_size=1)
