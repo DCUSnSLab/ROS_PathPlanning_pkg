@@ -1,4 +1,5 @@
 import rospy
+import time
 import numpy as np
 
 from geometry_msgs.msg import Point
@@ -36,16 +37,16 @@ class PurePursuit:
         # print(closest_distance)
         
         refined_closest_point = [closest_point.x, closest_point.y]
-
         closest_distance_list = [closest_distance, closest_distance]
+        
         lookahead_distance_list = [self.lookahead_distance, self.lookahead_distance]
         
         distance_mul = [lookahead_distance_list[i] * closest_current_sub[i] for i in range(len(closest_current_sub))]
         
         distance_div = [distance_mul[i] / closest_distance_list[i] for i in range(len(closest_distance_list))]
 
-        # lookahead_point = refined_closest_point + (self.lookahead_distance * (closest_current_sub) / closest_distance) # Original code
-        lookahead_point = [refined_closest_point[i] + distance_div[i] for i in range(len(distance_div))]
+        # lookahead_point = closest_point + self.lookahead_distance * (closest_point - current_pose[:2]) / closest_distance # Original code
+        lookahead_point = [distance_div[i] + refined_closest_point[i] for i in range(len(refined_closest_point))]
         
         #print()
         #print("refined_closest_point")
@@ -58,11 +59,15 @@ class PurePursuit:
         #print(closest_current_sub)
         #print("closest_distance")
         #print(closest_distance)
+        #print("current_pose")
+        #print(current_pose)
         #print("lookahead_point")
         #print(lookahead_point)
 
         # Calculate the steering angle
         steering_angle = np.arctan2(lookahead_point[1] - current_pose[1], lookahead_point[0] - current_pose[0]) - current_pose[2]
+        #print("steering_angle")
+        #print(steering_angle)
 
         # Limit the steering angle
         steering_angle = np.clip(steering_angle, -self.max_steering_angle, self.max_steering_angle)
@@ -73,7 +78,7 @@ class Controller:
     def __init__(self):
         print("Controller __init__ called.")
         self.path = None
-        self.pure_pursuit = PurePursuit(2, 0.5)
+        self.pure_pursuit = PurePursuit(0.3, 0.5)
         self.pub = rospy.Publisher("/ctrl_cmd", CtrlCmd, queue_size=1)
         '''
         int32 longlCmdType
@@ -86,7 +91,6 @@ class Controller:
         '''
         self.path_sub = rospy.Subscriber("/refined_vertices", MarkerArray, self.path_callback)
         self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odom_callback)
-        rospy.spin()
         
     def path_callback(self, msg):
         print("Path updated.")
@@ -97,6 +101,8 @@ class Controller:
             #print(marker.points[0].y)
         
     def odom_callback(self, msg):
+        #start = time.time()
+    
         cmd = CtrlCmd()
         if self.path == None:
             pass
@@ -113,10 +119,13 @@ class Controller:
             # print(steering_angle)
         
             self.pub.publish(cmd)
+            #end = time.time()
+            #print(end - start)
         
 if __name__=="__main__":
         rospy.init_node("Pure_pursuit")
         try:
             Controller()
+            rospy.spin()
         except:
             pass

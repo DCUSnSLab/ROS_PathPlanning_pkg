@@ -28,7 +28,7 @@ class Path_creater():
         else:
             print(self.vertex_count)
             print(str(self.vertex_count))
-            vertex_dict["adjacent"] = list(str(self.vertex_count))
+            vertex_dict["adjacent"] = list([str(self.vertex_count)])
             self.vertex_count = self.vertex_count + 1
 
         self.pose_list.append(vertex_dict)
@@ -41,7 +41,7 @@ class Path_creater():
         
     def shutdown(self):
         self.pose_list[len(self.pose_list) - 1]["adjacent"].append("0")
-        with open('./data.json','w') as f:
+        with open('./data_2.json','w') as f:
             json.dump(self.pose_list, f, ensure_ascii=False, indent=4)
         print("Shutdown")
 
