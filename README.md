@@ -1,16 +1,24 @@
 # ROS_PathPlanning_pkg
 Pathplanning on specified vertices
 
-## hdl Graph-SLAM 기반 셋업
+## hdl localization 기반 셋업
 
-### 테스트 환경
+### 동작 환경
 
- - Ubuntu 18.04
-    - ROS Melodic Morenia
+- ROS Melodic
+- ROS Noetic
+
+### 패키지 종속성
+
+
+
+### 구성
 
 아래 링크에서 현재 사용중인 ROS 버전에 맞는 hdl localization 설치 및 동작 확인
 
-https://github.com/koide3/hdl_localization
+[hdl_localization](https://github.com/koide3/hdl_localization)
+
+위 저장소 외에도 차량의 현재 측위를 추정할 수 있는 패키지 사용 가능
 
 hdl localization의 hdl_localization.launch 파일의 마지막 부분을 아래와 같이 수정
 
@@ -52,5 +60,4 @@ hdl_localization을 통해 차량의 현재 위치를 확인할 수 있는 상�
 
 - **/refined_vertices** (visualization_msgs/MarkerArray)
 
-  - /odom 토픽을 통한 현재 위치, Rviz에서 "2D Pose Estimate" 를 통해 지정한 목적지, 사전 정의된 정점을 바탕으로 생성한 경로로
-
+  - /odom 토픽을 통한 현재 위치, Rviz에서 "2D Pose Estimate" 를 통해 목적지를 지정하고, 사전 정의된 정점을 바탕으로 경로 생성 수행
