@@ -244,6 +244,7 @@ class DefinedWaypoints():
 		for idx, point in enumerate(refined_path):
 			refined_waypointlist.markers.append(self.add_waypoint(idx, point))
 
+		#self.pub.publish(self.waypointlist)
 		self.path_pub.publish(refined_waypointlist)
 
 		# matplotlib를 통한 시각화
