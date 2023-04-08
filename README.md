@@ -10,8 +10,6 @@ Pathplanning on specified vertices
 
 ### 패키지 종속성
 
-
-
 ### 구성
 
 아래 링크에서 현재 사용중인 ROS 버전에 맞는 hdl localization 설치 및 동작 확인
@@ -29,6 +27,14 @@ hdl localization의 hdl_localization.launch 파일의 마지막 부분을 아래
 </node>
 
 이후 동일한 워크스페이스의 src 경로에서 PathPlanning 패키지를 clone
+
+### Path Creator, Visualizer
+
+create_vertex.launch
+- rviz의 2D Nav Goal 을 사용해서 임의의 경로를 생성한다
+
+visualize_path.launch
+- 임의의 .pcd 지도 파일과 경로 파일 path.json 을 바탕으로 지도 내에 생성된 경로를 시각화한다.
 
 ## Localization
 
