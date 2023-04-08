@@ -181,7 +181,15 @@ class DefinedWaypoints():
 
 		self.start_vertex = None
 
-		self.json_file_path = rospy.get_param('~json_file')
+		args = sys.argv
+	
+		self.json_file_path = None
+	
+		if (args[1] != None):
+			self.json_file_path = args[1]
+
+		else:
+			self.json_file_path = rospy.get_param('~json_file')
 
 		with open(self.json_file_path) as f:
 			json_input = json.load(f)
