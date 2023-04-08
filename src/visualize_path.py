@@ -226,9 +226,13 @@ if __name__=="__main__":
 	start_vertex = None
 
 	args = sys.argv
-
-	# json_file_path = args[1]
-	json_file_path = rospy.get_param('~json_file')
+	
+	json_file_path = None
+	
+	if (args[1] != None):
+		json_file_path = args[1]
+	else:
+		json_file_path = rospy.get_param('~json_file')
 	print(json_file_path)
 
 	with open(json_file_path) as f:

@@ -27,6 +27,7 @@ class Path_creator():
         vertex_dict["xy"] = (x, y)
 
         if self.prev_pose == None:
+            vertex_dict["adjacent"] = None
             self.prev_pose = vertex_dict
         else:
             print(self.vertex_count)
