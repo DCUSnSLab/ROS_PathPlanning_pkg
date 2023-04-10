@@ -12,7 +12,7 @@
 	</node>
 		
 		
-    <node pkg="path_planning" type="visualize_path.py" name="visualize_path" output="screen" >
+    <node pkg="path_planning" type="visualize_path.py" name="json_file" output="screen" >
       <param name="json_file" value="$(find path_planning)/data/data_2.json" />
     </node>
     

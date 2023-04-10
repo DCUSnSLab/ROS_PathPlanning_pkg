@@ -17,15 +17,13 @@ class PurePursuit:
         self.test_marker = rospy.Publisher("/current_goal", Marker, queue_size=1)
 
     def calculate_steering_angle(self, current_pose, path):
-        print("current_pose")
-        print(current_pose)
         '''
         current_pose : List
         
         index
         0 : x coordinate
         1 : y coordinate
-        2 : pose
+        2 : yaw
         '''
         # Initialize closest point and distance to maximum value
         closest_point = None
@@ -107,12 +105,28 @@ class PurePursuit:
         self.test_marker.publish(tmp_marker)
 
         # Calculate the steering angle
-        steering_angle = np.arctan2(lookahead_point[1] - current_pose[1], lookahead_point[0] - current_pose[0]) - current_pose[2]
+        steering_angle = np.arctan2(lookahead_point[1] - current_pose[1], lookahead_point[0] - current_pose[0])
+        
+        print("steer :", steering_angle)
+        if steering_angle < 0:
+            if current_pose[2] < 0:
+                steering_angle = steering_angle - current_pose[2]
+            else:
+                steering_angle = steering_angle - current_pose[2]
+        elif steering_angle >= 0:
+            if current_pose[2] < 0:
+                steering_angle = steering_angle + current_pose[2]
+            else:
+                steering_angle = steering_angle - current_pose[2]
+        
+        # steering_angle = np.abs(steering_angle) + np.abs(current_pose[2]) - 6.28
+            
         #print("steering_angle")
         #print(steering_angle)
 
         # Limit the steering angle
-        print("steer before clip :", steering_angle)
+        print("yaw :", current_pose[2])
+        print("steer - yaw :", steering_angle)
         steering_angle = np.clip(steering_angle, -self.max_steering_angle, self.max_steering_angle)
         print("steer after clip :", steering_angle)
 
@@ -147,6 +161,7 @@ class Controller:
         self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odom_callback, queue_size=1)
         
         self.debug_marker = rospy.Publisher("/tmp_goal", Marker, queue_size=1)
+        rospy.on_shutdown(self.shutdown)
         
     def remove_closest_vertex(self, pose):
         # Remove Closest Marker in self.path list
@@ -200,7 +215,6 @@ class Controller:
             orientation_q = msg.pose.pose.orientation
             orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
             roll, pitch, yaw = euler_from_quaternion(orientation_list)
-            print(yaw)
             current_pose = [msg.pose.pose.position.x, msg.pose.pose.position.y, yaw]
             # path_points = [Point(p.pose.position.x, p.pose.position.y, 0.0) for p in self.path] # Original code
             self.remove_closest_vertex(current_pose)
@@ -244,8 +258,9 @@ class Controller:
             # cmd.accel = 0.3
             # cmd.steering = steering_angle
             
-            ack_cmd.drive.speed = 0.2
+            ack_cmd.drive.speed = 0.55
             ack_cmd.drive.steering_angle = steering_angle
+            # ack_cmd.drive.steering_angle = 57.2958
             
             # In Simulation, cmd.steering range -1.0 ~ 1.0
             # If steering in Python code is 0.1,
@@ -255,12 +270,24 @@ class Controller:
             # print(-steering_angle)
             print("steering_angle")
             print(steering_angle)
+            print()
+            print()
         
             # self.pub.publish(cmd)
             self.pub.publish(ack_cmd)
             rate.sleep()
             #end = time.time()
             #print(end - start)
+            
+    def shutdown(self):
+        print("Shutdown.")
+        
+        ack_cmd = AckermannDriveStamped()
+        
+        ack_cmd.drive.speed = 0.0
+        ack_cmd.drive.steering_angle = 0.0
+        
+        self.pub.publish(ack_cmd)
         
 if __name__=="__main__":
         rospy.init_node("Pure_pursuit")
