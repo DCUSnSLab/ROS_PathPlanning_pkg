@@ -8,13 +8,25 @@ from visualization_msgs.msg import Marker, MarkerArray
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Float64, ColorRGBA, Header
 from morai_msgs.msg import CtrlCmd
+from tf.transformations import euler_from_quaternion
 
 class PurePursuit:
     def __init__(self, lookahead_distance, max_steering_angle):
         self.lookahead_distance = lookahead_distance
         self.max_steering_angle = max_steering_angle
+        self.test_marker = rospy.Publisher("/current_goal", Marker, queue_size=1)
 
     def calculate_steering_angle(self, current_pose, path):
+        print("current_pose")
+        print(current_pose)
+        '''
+        current_pose : List
+        
+        index
+        0 : x coordinate
+        1 : y coordinate
+        2 : pose
+        '''
         # Initialize closest point and distance to maximum value
         closest_point = None
         closest_distance = float('inf')
@@ -61,9 +73,38 @@ class PurePursuit:
         #print("closest_distance")
         #print(closest_distance)
         #print("current_pose")
-        #print(current_pose)
+        #print(current_pose)                         
         #print("lookahead_point")
         #print(lookahead_point)
+        
+        tmp_marker = Marker()
+
+        tmp_point = Point()
+        tmp_marker.points.append(tmp_point)
+
+        tmp_marker.ns = "current_goal"
+        tmp_marker.id = 9999
+        tmp_marker.text = "CURRENT goal"
+
+        tmp_marker.type = 8
+        tmp_marker.lifetime = rospy.Duration.from_sec(3)
+
+        tmp_marker.header = self.make_header("map")
+
+        tmp_marker.scale.x = 0.9
+        tmp_marker.scale.y = 0.9
+        tmp_marker.scale.z = 0.5
+
+        tmp_marker.color.r = 0.5
+        tmp_marker.color.b = 0.5
+        tmp_marker.color.a = 0.8
+
+        tmp_marker.points[0].x = lookahead_point[0]
+        tmp_marker.points[0].y = lookahead_point[1]
+
+	# print(tmp_marker)
+
+        self.test_marker.publish(tmp_marker)
 
         # Calculate the steering angle
         steering_angle = np.arctan2(lookahead_point[1] - current_pose[1], lookahead_point[0] - current_pose[0]) - current_pose[2]
@@ -71,15 +112,25 @@ class PurePursuit:
         #print(steering_angle)
 
         # Limit the steering angle
+        print("steer before clip :", steering_angle)
         steering_angle = np.clip(steering_angle, -self.max_steering_angle, self.max_steering_angle)
+        print("steer after clip :", steering_angle)
 
         return steering_angle
+
+    def make_header(self, frame_id, stamp=None):
+        if stamp == None:
+            stamp = rospy.Time.now()
+        header = Header()
+        header.stamp = stamp
+        header.frame_id = frame_id
+        return header
 
 class Controller:
     def __init__(self):
         print("Controller __init__ called.")
         self.path = None
-        self.pure_pursuit = PurePursuit(1.0, 0.3)
+        self.pure_pursuit = PurePursuit(0.0, 0.5)
         # self.pub = rospy.Publisher("/ctrl_cmd", CtrlCmd, queue_size=1)
         self.pub = rospy.Publisher("/drive", AckermannDriveStamped, queue_size=1)
 
@@ -93,7 +144,7 @@ class Controller:
         float64 acceleration
         '''
         self.path_sub = rospy.Subscriber("/refined_vertices", MarkerArray, self.path_callback)
-        self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odom_callback)
+        self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odom_callback, queue_size=1)
         
         self.debug_marker = rospy.Publisher("/tmp_goal", Marker, queue_size=1)
         
@@ -109,7 +160,7 @@ class Controller:
         for marker in self.path_points:
             vertex_xy = np.array((marker.x, marker.y))
             # print(np.linalg.norm(np_pose - vertex_xy))
-            if np.linalg.norm(np_pose - vertex_xy) < 1.5:
+            if np.linalg.norm(np_pose - vertex_xy) < 1.0:
                 self.path_points.remove(marker)
             #print(marker)
     
@@ -132,6 +183,13 @@ class Controller:
             #print(marker.points[0].y)
         
     def odom_callback(self, msg):
+        rate = rospy.Rate(3)
+
+        hours = msg.header.stamp.to_sec() // 3600
+        minutes = (msg.header.stamp.to_sec() // 60) % 60
+        seconds = msg.header.stamp.to_sec() % 60
+        
+        print("Time : {} hours, {} minutes, {} seconds".format(int(hours), int(minutes), int(seconds)))
         #start = time.time()
     
         # cmd = CtrlCmd()
@@ -139,7 +197,11 @@ class Controller:
         if self.path == None or len(self.path_points) == 0:
             pass
         else:
-            current_pose = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.orientation.z]
+            orientation_q = msg.pose.pose.orientation
+            orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+            roll, pitch, yaw = euler_from_quaternion(orientation_list)
+            print(yaw)
+            current_pose = [msg.pose.pose.position.x, msg.pose.pose.position.y, yaw]
             # path_points = [Point(p.pose.position.x, p.pose.position.y, 0.0) for p in self.path] # Original code
             self.remove_closest_vertex(current_pose)
             # print(current_pose)
@@ -165,7 +227,9 @@ class Controller:
             tmp_marker.scale.z = 0.1
             
             tmp_marker.color.r = 1.0
-            tmp_marker.color.a = 1.0
+            tmp_marker.color.a = 0.8
+            
+            # tmp_marker.lifetime = 100
             
             tmp_marker.points[0].x = self.path_points[0].x
             tmp_marker.points[0].y = self.path_points[0].y
@@ -180,7 +244,7 @@ class Controller:
             # cmd.accel = 0.3
             # cmd.steering = steering_angle
             
-            ack_cmd.drive.speed = 0.3
+            ack_cmd.drive.speed = 0.2
             ack_cmd.drive.steering_angle = steering_angle
             
             # In Simulation, cmd.steering range -1.0 ~ 1.0
@@ -194,6 +258,7 @@ class Controller:
         
             # self.pub.publish(cmd)
             self.pub.publish(ack_cmd)
+            rate.sleep()
             #end = time.time()
             #print(end - start)
         

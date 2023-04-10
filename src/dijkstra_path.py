@@ -209,6 +209,7 @@ class DefinedWaypoints():
 		self.nav_goal_sub = rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.goal_point_callback, queue_size=1)
 		self.nav_start_sub = rospy.Subscriber("/odom", Odometry, self.current_pos_callback, queue_size=1)
 		print("DefinedWaypoints() __init__ end")
+		self.pub.publish(self.waypointlist)
 		rospy.spin()
 
 	def goal_point_callback(self, data):
@@ -263,9 +264,6 @@ class DefinedWaypoints():
 
 	def current_pos_callback(self, data):
 		self.start_vertex = data
-
-	def publish(self):
-		self.pub.publish(self.waypointlist)
 
 	def add_waypoint(self, idx, point):
 		"""
