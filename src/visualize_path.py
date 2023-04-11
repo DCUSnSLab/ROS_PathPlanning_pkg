@@ -169,150 +169,90 @@ class Dijkstra():
 		""" 입력받은 start, dst Vertex의 index 값을 사용하여 거리 값 계산 후 리턴"""
 		return math.sqrt(math.pow(self.vertices[int(start)]["xy"][0] - self.vertices[int(dst)]["xy"][0], 2) + math.pow(self.vertices[int(start)]["xy"][1] - self.vertices[int(dst)]["xy"][1], 2))
 
-class DefinedWaypoints():
-	def __init__(self):
-		print("DefinedWaypoints() __init__ called")
-		self.pub = rospy.Publisher("/defined_vertices", MarkerArray, queue_size=1)
-		self.path_pub = rospy.Publisher("/refined_vertices", MarkerArray, queue_size=1)
-		self.waypointlist = MarkerArray()
-		self.rate = rospy.Rate(1)
+def add_waypoint(idx, point):
+	"""
+	Marker() 메시지 자료형을 리턴하는 함수
+	"""
+	waypoint = Marker()
 
-		self.pointlist = list()
+	waypoint.ns = str(idx)  # Marker namespace
+	waypoint.id = idx  # Marker id value, no duplicates
+	waypoint.text = str(idx)  # Marker namespace
 
-		self.start_vertex = None
+	waypoint.type = 8  # line strip
+	waypoint.lifetime = rospy.Duration.from_sec(5)
+	waypoint.header = make_header("map")
 
-		args = sys.argv
-	
-		self.json_file_path = None
-	
-		if (args[1] != None):
-			self.json_file_path = args[1]
+	waypoint.action = 0 # 정화한 용도를 모르겠음
 
-		else:
-			self.json_file_path = rospy.get_param('~json_file')
+	# Set waypoint size
+	waypoint.scale.x = 0.7
+	waypoint.scale.y = 0.7
+	waypoint.scale.z = 0.1
 
-		with open(self.json_file_path) as f:
-			json_input = json.load(f)
+	# Set waypoint color, alpha
+	waypoint.color.r = 0.25
+	waypoint.color.g = 1.0
+	waypoint.color.b = 0.25
+	waypoint.color.a = 1.0
 
-		print("json input")
-		print(json_input)
+	pt = Point32()
+	pt.x = point[0]
+	pt.y = point[1]
+	pt.z = 0.0 # Waypoint의 z축은 현재는 불필요함
 
-		self.dijkstra = Dijkstra(json_input)
+	waypoint.points.append(pt)
 
+	return waypoint
 
-		for vertex in json_input:
-			self.pointlist.append(vertex["xy"])
-
-		for idx, point in enumerate(self.pointlist):
-			self.waypointlist.markers.append(self.add_waypoint(idx, point))
-
-		self.nav_goal_sub = rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.goal_point_callback, queue_size=1)
-		self.nav_start_sub = rospy.Subscriber("/odom", Odometry, self.current_pos_callback, queue_size=1)
-		print("DefinedWaypoints() __init__ end")
-		self.pub.publish(self.waypointlist)
-		rospy.spin()
-
-	def goal_point_callback(self, data):
-		goal_position = {
-			"xy": [data.pose.position.x, data.pose.position.y],
-			"adjacent": None
-		}
-		current_position = {
-			"xy": [self.start_vertex.pose.pose.position.x, self.start_vertex.pose.pose.position.y],
-			"adjacent": None
-		}
-		start_nearest_vertex, start_nearest_vertex_idx = self.dijkstra.find_nearest_vertex(goal_position)
-		goal_position["adjacent"] = str(start_nearest_vertex_idx)
-
-		goal_nearest_vertex, goal_nearest_vertex_idx = self.dijkstra.find_nearest_vertex(current_position)
-		current_position["adjacent"] = str(goal_nearest_vertex_idx)
-
-		self.dijkstra.insert_vertex(current_position, start_nearest_vertex_idx, start_nearest_vertex)
-		self.dijkstra.insert_vertex(goal_position, goal_nearest_vertex_idx, goal_nearest_vertex)
-		self.dijkstra.construct_graph()
-
-		self.dijkstra.calc_path(str(len(self.dijkstra.init_graph) - 2), str(len(self.dijkstra.init_graph) - 1))
-
-		# 생성된 경로 값 가져오기
-		path = self.dijkstra.get_path()
-
-		# 생성된 경로 path의 x, y 좌표만을 저장하기 위한 리스트 변수
-		refined_path = list()
-
-		# 생성된 경로 path의 x, y 좌표를 사용하여 생성된 Marker() 메시지를 저장하기 위한 변수
-		refined_waypointlist = MarkerArray()
-
-		# 생성된 경로 path를 사용하여 (x, y) 좌표 형태로 기록된 리스트를 만든다.
-		for idx in path[1:len(path) - 1]:
-			print(idx)
-			refined_path.append(self.dijkstra.vertices[int(idx)]["xy"])
-
-		refined_path.insert(0, current_position["xy"])
-		refined_path.append(goal_position["xy"])
-
-		for idx, point in enumerate(refined_path):
-			refined_waypointlist.markers.append(self.add_waypoint(idx, point))
-
-		#self.pub.publish(self.waypointlist)
-		self.path_pub.publish(refined_waypointlist)
-
-		# matplotlib를 통한 시각화
-
-		# 경로 생성 완료 후 생성된 시작 지점과 도착 지점은 제거한다.
-		del(self.dijkstra.init_graph[str(len(self.dijkstra.init_graph) - 1)])
-		del(self.dijkstra.init_graph[str(len(self.dijkstra.init_graph) - 1)])
-
-	def current_pos_callback(self, data):
-		self.start_vertex = data
-
-	def add_waypoint(self, idx, point):
-		"""
-		Marker() 메시지 자료형을 리턴하는 함수
-		"""
-		waypoint = Marker()
-
-		waypoint.ns = str(idx)  # Marker namespace
-		waypoint.id = idx  # Marker id value, no duplicates
-		waypoint.text = str(idx)  # Marker namespace
-
-		waypoint.type = 8  # line strip
-		waypoint.lifetime = rospy.Duration.from_sec(5)
-		waypoint.header = self.make_header("map")
-
-		waypoint.action = 0 # 정화한 용도를 모르겠음
-
-		# Set waypoint size
-		waypoint.scale.x = 0.7
-		waypoint.scale.y = 0.7
-		waypoint.scale.z = 0.1
-
-		# Set waypoint color, alpha
-		waypoint.color.r = 0.25
-		waypoint.color.g = 1.0
-		waypoint.color.b = 0.25
-		waypoint.color.a = 1.0
-
-		pt = Point32()
-		pt.x = point[0]
-		pt.y = point[1]
-		pt.z = 0.0 # Waypoint의 z축은 현재는 불필요함
-
-		waypoint.points.append(pt)
-
-		return waypoint
-		# self.waypointlist.markers.append(waypoint)
-
-	def make_header(self, frame_id, stamp=None):
-		if stamp == None:
-			stamp = rospy.Time.now()
-		header = Header()
-		header.stamp = stamp
-		header.frame_id = frame_id
-		return header
+def make_header(frame_id, stamp=None):
+	if stamp == None:
+		stamp = rospy.Time.now()
+	header = Header()
+	header.stamp = stamp
+	header.frame_id = frame_id
+	return header
 
 if __name__=="__main__":
-	rospy.init_node("trajectory_search")
-	try:
-		DefinedWaypoints()
-	except:
-		pass
+	rospy.init_node("Path_Visualize")
+	
+	pub = rospy.Publisher("/defined_vertices", MarkerArray, queue_size=1)
+	
+	waypointlist = MarkerArray()
+	rate = rospy.Rate(1)
+
+	pointlist = list()
+
+	start_vertex = None
+
+	args = sys.argv
+	
+	json_file_path = None
+	
+	if (args[1] != None):
+		json_file_path = args[1]
+	else:
+		json_file_path = rospy.get_param('~json_file')
+	print(json_file_path)
+
+	with open(json_file_path) as f:
+		json_input = json.load(f)
+
+	print("json input")
+	print(json_input)
+
+	dijkstra = Dijkstra(json_input)
+
+
+	for vertex in json_input:
+		pointlist.append(vertex["xy"])
+
+	for idx, point in enumerate(pointlist):
+		waypointlist.markers.append(add_waypoint(idx, point))
+
+	rate = rospy.Rate(1)
+
+	while not rospy.is_shutdown():
+		pub.publish(waypointlist)
+		rate.sleep()
+	rospy.spin()

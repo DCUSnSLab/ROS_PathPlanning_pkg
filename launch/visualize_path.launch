@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="nodelet_manager" default="path_visualizer_nodelet_manager" />
+    
+    <arg name="map_file" default="$(find path_planning)/data/20230126_02.pcd" />
+
+    <node pkg="nodelet" type="nodelet" name="$(arg nodelet_manager)" args="manager" output="screen"/>
+    
+	<!-- global map for create vertex-->
+	<node pkg="nodelet" type="nodelet" name="globalmap_server_nodelet" args="load hdl_localization/GlobalmapServerNodelet $(arg nodelet_manager)">
+	    <param name="globalmap_pcd" value="$(arg map_file)" />
+	</node>
+		
+		
+    <node pkg="path_planning" type="visualize_path.py" name="json_file" output="screen" >
+      <param name="json_file" value="$(find path_planning)/data/data_2.json" />
+    </node>
+    
+    <node pkg="rviz" type="rviz" name="rviz" args="-d $(find path_planning)/rviz/path_visualizer.rviz" />
+</launch>
