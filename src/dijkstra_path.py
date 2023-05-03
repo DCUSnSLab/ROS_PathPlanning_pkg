@@ -185,7 +185,7 @@ class DefinedWaypoints():
 	
 		self.json_file_path = None
 	
-		if (args[1] != None):
+		if (args[1] != None and args[1][0:6] != "__name"):
 			self.json_file_path = args[1]
 
 		else:
@@ -193,9 +193,6 @@ class DefinedWaypoints():
 
 		with open(self.json_file_path) as f:
 			json_input = json.load(f)
-
-		print("json input")
-		print(json_input)
 
 		self.dijkstra = Dijkstra(json_input)
 

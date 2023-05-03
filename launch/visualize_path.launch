@@ -11,8 +11,9 @@
 	    <param name="globalmap_pcd" value="$(arg map_file)" />
 	</node>
 		
-		
-    <node pkg="path_planning" type="visualize_path.py" name="json_file" output="screen" >
+
+	<!-- This node works weired. node tag's name parameter passed instead param tag's value-->
+    <node name="visualize" pkg="path_planning" type="visualize_path.py" output="screen" >
       <param name="json_file" value="$(find path_planning)/data/data_2.json" />
     </node>
     

@@ -3,7 +3,7 @@
     <arg name="nodelet_manager" default="vertex_creator_nodelet_manager" />
     
     <!--<arg name="map_file" default="$(find path_planning)/data/20230126_02.pcd" />-->
-    <arg name="map_file" default="/home/ros/k-city.pcd" />
+    <arg name="map_file" default="/home/ros/map/moraisim_0.1.pcd" />
 
     <node pkg="nodelet" type="nodelet" name="$(arg nodelet_manager)" args="manager" output="screen"/>
     
