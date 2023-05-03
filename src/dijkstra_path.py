@@ -35,7 +35,6 @@ class Graph(object):
 
 	def get_nodes(self):
 		return self.nodes
-
 	def get_outgoing_edges(self, node):
 		connections = []
 		for out_node in self.nodes:
@@ -263,6 +262,7 @@ class DefinedWaypoints():
 
 	def current_pos_callback(self, data):
 		self.start_vertex = data
+		print("현재 위치값 : ",self.start_vertex)
 
 	def publish(self):
 		self.pub.publish(self.waypointlist)
