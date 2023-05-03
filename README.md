@@ -12,6 +12,8 @@ Pathplanning on specified vertices
 
 ### 구성
 
+[Pure pursuit](https://github.com/DCUSnSLab/SCV_Pure_pursuit/tree/master/src)
+
 아래 링크에서 현재 사용중인 ROS 버전에 맞는 hdl localization 설치 및 동작 확인
 
 [hdl_localization](https://github.com/koide3/hdl_localization)
