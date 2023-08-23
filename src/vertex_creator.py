@@ -6,6 +6,8 @@ import json
 import time
 from std_msgs.msg import Int32
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+from visualization_msgs.msg import Marker, MarkerArray
+from nav_msgs.msg import Path
 
 '''
 
@@ -15,13 +17,22 @@ class Path_creator():
     def __init__(self):
         self.goal_sub = rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.callback)
         self.end_sub = rospy.Subscriber('/end', Int32, self.end)
+        self.path_pub = rospy.Publisher('/current_vertices', Path, queue_size=1)
         self.pose_list = list()
+        self.path = Path()
         self.prev_pose = None
         self.vertex_count = 0
         rospy.on_shutdown(self.shutdown)
 
     def callback(self, goal):
+        self.path.header.stamp = goal.header.stamp
+        self.path.header.frame_id = goal.header.frame_id
+
+        self.path.poses.append(goal)
+
         vertex_dict = dict()
+        print("goal")
+        print(goal)
         x = goal.pose.position.x
         y = goal.pose.position.y
         vertex_dict["xy"] = (x, y)
@@ -36,6 +47,8 @@ class Path_creator():
             self.vertex_count = self.vertex_count + 1
 
         self.pose_list.append(vertex_dict)
+
+        self.path_pub.publish(self.path)
         
         # print(self.pose_list)
         # print("callback")
