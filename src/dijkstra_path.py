@@ -19,7 +19,7 @@ class Graph(object):
 
 	def construct_graph(self, init_graph):
 		# init_graph에 명시된 값을 바탕으로 그래프를 생성한다.
-		print(init_graph)
+		# print(init_graph)
 		graph = {}
 		for name in init_graph:
 			graph[name] = {}
@@ -58,16 +58,16 @@ class Dijkstra():
 		print("construct_graph() called.")
 		for idx, vertex in enumerate(self.vertices):
 			self.init_graph[idx] = {}
-			print("for loop")
-			print(vertex["adjacent"])
+			# print("for loop")
+			# print(vertex["adjacent"])
 			if vertex["adjacent"]:  # 인접한 Vertex가 있는 경우
-				print("if vertex['adjacent']:")
+				# print("if vertex['adjacent']:")
 				for adjacent in vertex["adjacent"]:  # 각 인접 vertex에 대한 dict 생성 및 거리값 초기화
-					print("adjacent")
-					print(adjacent)
-					print("for adjacent in vertex")
+					# print("adjacent")
+					# print(adjacent)
+					# print("for adjacent in vertex")
 					self.init_graph[idx][adjacent] = self.calcdistance(idx, adjacent)
-					print("calcdistance end")
+					# print("calcdistance end")
 
 		self.graph = Graph(self.init_graph)
 		print("construct_graph() end.")
@@ -165,7 +165,7 @@ class Dijkstra():
 		return math.sqrt(math.pow(start["xy"][0] - dst["xy"][0], 2) + math.pow(start["xy"][1] - dst["xy"][1], 2))
 
 	def calcdistance(self, start, dst):
-		print("calcdistance() called.")
+		# print("calcdistance() called.")
 		""" 입력받은 start, dst Vertex의 index 값을 사용하여 거리 값 계산 후 리턴"""
 		return math.sqrt(math.pow(self.vertices[int(start)]["xy"][0] - self.vertices[int(dst)]["xy"][0], 2) + math.pow(self.vertices[int(start)]["xy"][1] - self.vertices[int(dst)]["xy"][1], 2))
 
