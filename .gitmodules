@@ -1,0 +1,6 @@
+[submodule "src/hdl_localization"]
+	path = src/hdl_localization
+	url = https://github.com/DCUSnSLab/ROS_hdl_localization.git
+[submodule "src/pure_pursuit"]
+	path = src/pure_pursuit
+	url = https://github.com/DCUSnSLab/SCV_Pure_pursuit
