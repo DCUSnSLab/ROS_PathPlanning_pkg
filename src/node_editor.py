@@ -1,150 +1,122 @@
-import tkinter as tk
-import networkx as nx
 import json
+import networkx as nx
+import tkinter as tk
+from tkinter import Canvas, filedialog
 
 
-class GraphEditor:
-    def __init__(self, master, json_file):
+# Load the JSON file
+def load_json(file_path):
+    with open(file_path, 'r') as f:
+        return json.load(f)
+
+
+# Save the JSON file
+def save_json(data, file_path):
+    with open(file_path, 'w') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+class NodeEditor:
+    def __init__(self, master, json_data, output_file):
         self.master = master
-        self.master.title("Graph Editor")
-        self.canvas = tk.Canvas(master, width=800, height=600, bg="white")
+        self.json_data = json_data
+        self.output_file = output_file
+
+        # Extract GPS coordinates and normalize
+        lats = [node["GpsInfo"]["Lat"] for node in json_data["Node"]]
+        longs = [node["GpsInfo"]["Long"] for node in json_data["Node"]]
+
+        self.lat_min, self.lat_max = min(lats), max(lats)
+        self.long_min, self.long_max = min(longs), max(longs)
+
+        self.nodes = {
+            node["ID"]: self.normalize_coords(
+                node["GpsInfo"]["Long"], node["GpsInfo"]["Lat"]
+            )
+            for node in json_data["Node"]
+        }
+
+        self.links = [(link["FromNodeID"], link["ToNodeID"]) for link in json_data["Link"]]
+
+        self.canvas = Canvas(master, width=800, height=600, bg="white")
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
-        self.graph = nx.Graph()
-        self.node_positions = {}
+        self.node_items = {}
         self.selected_node = None
-        self.temp_link_start = None
-        self.json_file = json_file
 
-        # Zoom settings
-        self.scale_factor = 1.0  # Initial scale
+        self.draw_graph()
 
-        # Load graph from JSON
-        self.load_graph_from_json(json_file)
-
-        self.canvas.bind("<Button-1>", self.on_click)
+        self.canvas.bind("<ButtonPress-1>", self.on_click)
         self.canvas.bind("<B1-Motion>", self.on_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_release)
 
-        # Key bindings for zoom
-        self.master.bind("<Key-plus>", self.zoom_in)
-        self.master.bind("<Key-minus>", self.zoom_out)
+    def normalize_coords(self, longitude, latitude):
+        """Normalize GPS coordinates to fit canvas dimensions."""
+        x = (longitude - self.long_min) / (self.long_max - self.long_min) * 800
+        y = (latitude - self.lat_min) / (self.lat_max - self.lat_min) * 600
+        return x, y
 
-        self.draw_graph()
-
-    def load_graph_from_json(self, json_file):
-        """
-        Load the graph from a JSON file.
-        """
-        with open(json_file, 'r') as f:
-            data = json.load(f)
-
-        for node in data["Node"]:
-            node_id = node["ITSNodeID"]
-            lat = node["GpsInfo"]["Lat"]
-            lon = node["GpsInfo"]["Long"]
-            if lat is not None and lon is not None:
-                x, y = lon * 10, -lat * 10  # Initial scaling
-                self.graph.add_node(node_id)
-                self.node_positions[node_id] = (x, y)
-
-        for link in data["Link"]:
-            self.graph.add_edge(link["FromNodeID"], link["ToNodeID"])
-
-    def zoom_in(self, event=None):
-        """
-        Zoom in the canvas by increasing the scale factor.
-        """
-        self.scale_factor *= 1.2
-        self.update_node_positions()
-        self.draw_graph()
-
-    def zoom_out(self, event=None):
-        """
-        Zoom out the canvas by decreasing the scale factor.
-        """
-        self.scale_factor /= 1.2
-        self.update_node_positions()
-        self.draw_graph()
-
-    def update_node_positions(self):
-        """
-        Update node positions based on the current scale factor.
-        """
-        for node_id, (x, y) in self.node_positions.items():
-            self.node_positions[node_id] = (x * self.scale_factor, y * self.scale_factor)
+    def denormalize_coords(self, x, y):
+        """Convert canvas coordinates back to GPS values."""
+        longitude = x / 800 * (self.long_max - self.long_min) + self.long_min
+        latitude = y / 600 * (self.lat_max - self.lat_min) + self.lat_min
+        return longitude, latitude
 
     def draw_graph(self):
-        """
-        Redraw the graph on the canvas.
-        """
         self.canvas.delete("all")
-        for edge in self.graph.edges:
-            x1, y1 = self.node_positions[edge[0]]
-            x2, y2 = self.node_positions[edge[1]]
-            self.canvas.create_line(x1, y1, x2, y2, fill="gray", width=2)
 
-        for node, (x, y) in self.node_positions.items():
-            self.canvas.create_oval(x - 15, y - 15, x + 15, y + 15, fill="blue", outline="black", width=2)
-            self.canvas.create_text(x, y, text=str(node), fill="white")
+        # Draw links
+        for from_node, to_node in self.links:
+            if from_node in self.nodes and to_node in self.nodes:
+                x1, y1 = self.nodes[from_node]
+                x2, y2 = self.nodes[to_node]
+                self.canvas.create_line(x1, y1, x2, y2, fill="gray")
+
+        # Draw nodes
+        for node_id, (x, y) in self.nodes.items():
+            item = self.canvas.create_oval(
+                x - 5, y - 5, x + 5, y + 5, fill="blue", outline="black"
+            )
+            self.node_items[item] = node_id
 
     def on_click(self, event):
-        """
-        Handle mouse click events on the canvas.
-        """
-        x, y = event.x, event.y
-        clicked_node = self.get_node_at_position(x, y)
-        if clicked_node:
-            self.selected_node = clicked_node
-            if self.temp_link_start is None:
-                self.temp_link_start = clicked_node
-            else:
-                self.graph.add_edge(self.temp_link_start, clicked_node)
-                self.temp_link_start = None
-        else:
-            new_node_id = f"N{len(self.graph.nodes):04d}"
-            self.graph.add_node(new_node_id)
-            self.node_positions[new_node_id] = (x / self.scale_factor, y / self.scale_factor)
-        self.draw_graph()
+        for item, node_id in self.node_items.items():
+            coords = self.canvas.coords(item)
+            if len(coords) == 4:  # Ensure we have valid coordinates
+                x1, y1, x2, y2 = coords
+                if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+                    self.selected_node = node_id
+                    break
 
     def on_drag(self, event):
-        """
-        Handle mouse drag events to move nodes.
-        """
-        if self.selected_node is not None:
-            self.node_positions[self.selected_node] = (event.x / self.scale_factor, event.y / self.scale_factor)
+        if self.selected_node:
+            self.nodes[self.selected_node] = (event.x, event.y)
             self.draw_graph()
 
     def on_release(self, event):
-        """
-        Handle mouse release events to finalize node dragging.
-        """
+        if self.selected_node:
+            for node in self.json_data["Node"]:
+                if node["ID"] == self.selected_node:
+                    longitude, latitude = self.denormalize_coords(event.x, event.y)
+                    node["GpsInfo"]["Long"] = longitude
+                    node["GpsInfo"]["Lat"] = latitude
+                    break
+            save_json(self.json_data, self.output_file)
+            print(f"Node {self.selected_node} updated")
         self.selected_node = None
 
-    def get_node_at_position(self, x, y):
-        """
-        Check if a node exists at the given position.
-        """
-        for node, (nx, ny) in self.node_positions.items():
-            if (x - nx * self.scale_factor) ** 2 + (y - ny * self.scale_factor) ** 2 <= 15 ** 2:
-                return node
-        return None
-
-    def save_graph_to_json(self, graph, output_file):
-        """
-        Save the graph to a JSON file.
-
-        Args:
-            graph (dict): JSON graph structure.
-            output_file (str): Path to the output JSON file.
-        """
-        with open(output_file, 'w') as f:
-            json.dump(graph, f, indent=4)
 
 if __name__ == "__main__":
-    json_file = "waypoint_graph.json"
+    input_file = "waypoint_graph.json"
+    output_file = "waypoint_graph_output.json"
 
+    print("Loading JSON data...")
+    data = load_json(input_file)
+
+    print("Launching editor...")
     root = tk.Tk()
-    app = GraphEditor(root, json_file)
-    root.protocol("WM_DELETE_WINDOW", lambda: (app.save_graph_to_json(), root.destroy()))
+    root.title("Node Editor")
+    editor = NodeEditor(root, data, output_file)
     root.mainloop()
+
+    print(f"Updated data saved to {output_file}")

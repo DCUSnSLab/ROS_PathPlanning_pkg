@@ -26,13 +26,12 @@ def extract_gps_from_bag(bag_file, gps_topic):
             gps_data.append((lat, lon, alt))
     return gps_data
 
-def create_json_graph(gps_data, distance_threshold=0.01):
+def create_json_graph(gps_data):
     """
     Create a JSON graph from GPS data.
 
     Args:
         gps_data (list): List of GPS coordinates (latitude, longitude, altitude).
-        distance_threshold (float): Distance threshold for connecting nodes.
 
     Returns:
         dict: JSON graph structure with Nodes and Links.
@@ -40,12 +39,14 @@ def create_json_graph(gps_data, distance_threshold=0.01):
     current_date = datetime.datetime.now().strftime("%Y%m%d")
     graph = {"Node": [], "Link": []}
 
-    # Create Nodes
+    # Create Nodes and Links
     for i, (lat, lon, alt) in enumerate(gps_data):
         node_id = f"N{i:04d}"  # Unique Node ID
         graph["Node"].append({
+            "ID": node_id,
+            "AdminCode": None,
             "NodeType": 1,
-            "ITSNodeID": node_id,
+            "ITSNodeID": None,
             "Maker": "한국도로공사",
             "UpdateDate": current_date,
             "Version": "2021",
@@ -59,34 +60,34 @@ def create_json_graph(gps_data, distance_threshold=0.01):
             }
         })
 
-        # Create Links between nodes
-        for j in range(i):
-            lat2, lon2, _ = gps_data[j]
-            distance = np.sqrt((lat - lat2)**2 + (lon - lon2)**2)
-            if distance < distance_threshold:
-                link_id = f"L{i:04d}{j:04d}"
-                graph["Link"].append({
-                    "ID": link_id,
-                    "AdminCode": "110",
-                    "RoadRank": 1,
-                    "RoadType": 1,
-                    "RoadNo": "20",
-                    "LinkType": 3,
-                    "LaneNo": 2,
-                    "R_LinkID": f"R_{j:04d}",
-                    "L_LinkID": f"L_{i:04d}",
-                    "FromNodeID": f"N{j:04d}",
-                    "ToNodeID": node_id,
-                    "SectionID": "A3_DRIVEWAYSECTION",
-                    "Length": round(distance * 1000, 2),  # Convert to meters
-                    "ITSLinkID": f"ITS_{uuid.uuid4().hex[:8]}",
-                    "Maker": "한국도로공사",
-                    "UpdateDate": current_date,
-                    "Version": "2021",
-                    "Remark": "특이사항 없음",
-                    "HistType": "02A",
-                    "HistRemark": "진출입 도로 변경"
-                })
+        # Create Link to the previous node
+        if i > 0:
+            prev_node_id = f"N{i-1:04d}"
+            prev_lat, prev_lon, _ = gps_data[i - 1]
+            distance = np.sqrt((lat - prev_lat)**2 + (lon - prev_lon)**2)
+            link_id = f"L{i-1:04d}{i:04d}"
+            graph["Link"].append({
+                "ID": link_id,
+                "AdminCode": "110",
+                "RoadRank": 1,
+                "RoadType": 1,
+                "RoadNo": "20",
+                "LinkType": 3,
+                "LaneNo": 2,
+                "R_LinkID": f"R_{i-1:04d}",
+                "L_LinkID": f"L_{i:04d}",
+                "FromNodeID": prev_node_id,
+                "ToNodeID": node_id,
+                "SectionID": "A3_DRIVEWAYSECTION",
+                "Length": round(distance * 1000, 2),  # Convert to meters
+                "ITSLinkID": f"ITS_{uuid.uuid4().hex[:8]}",
+                "Maker": "한국도로공사",
+                "UpdateDate": current_date,
+                "Version": "2021",
+                "Remark": "특이사항 없음",
+                "HistType": "02A",
+                "HistRemark": "진출입 도로 변경"
+            })
 
     return graph
 
@@ -114,7 +115,7 @@ def visualize_graph(json_graph):
     # Add nodes with positions
     pos = {}
     for node in json_graph["Node"]:
-        node_id = node["ITSNodeID"]
+        node_id = node["ID"]
         lat = node["GpsInfo"]["Lat"]
         lon = node["GpsInfo"]["Long"]
         pos[node_id] = (lon, lat)  # Use longitude as x and latitude as y
@@ -133,18 +134,18 @@ def visualize_graph(json_graph):
         G,
         pos,
         with_labels=True,
-        node_size=500,
-        font_size=10,
+        node_size=250,
+        font_size=5,
         font_color='white',
         node_color='blue',
-        edge_color='gray'
+        # edge_color='gray'
     )
     edge_labels = nx.get_edge_attributes(G, 'weight')
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
-    plt.title("Waypoint Graph Visualization")
-    plt.xlabel("Longitude")
-    plt.ylabel("Latitude")
-    plt.grid(True)
+    #nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
+    #plt.title("Waypoint Graph Visualization")
+    #plt.xlabel("Longitude")
+    #plt.ylabel("Latitude")
+    plt.grid(False)
     plt.show()
 
 if __name__ == "__main__":
