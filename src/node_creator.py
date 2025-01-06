@@ -150,9 +150,9 @@ def visualize_graph(json_graph):
 
 if __name__ == "__main__":
     # Example usage
-    bag_file = "../data/2025-01-02-21-53-28.bag"
+    bag_file = "../data/2025-01-03-18-20-30.bag"
     gps_topic = "/gps"
-    output_json = "waypoint_graph.json"
+    output_json = "20250103_waypoint_graph.json"
 
     print("Extracting GPS data from rosbag...")
     gps_data = extract_gps_from_bag(bag_file, gps_topic)

@@ -1,7 +1,7 @@
 import json
 import networkx as nx
 import tkinter as tk
-from tkinter import Canvas, filedialog
+from tkinter import Canvas, filedialog, simpledialog
 
 
 # Load the JSON file
@@ -17,14 +17,45 @@ def save_json(data, file_path):
 
 
 class NodeEditor:
-    def __init__(self, master, json_data, output_file):
+    def __init__(self, master):
         self.master = master
-        self.json_data = json_data
-        self.output_file = output_file
 
-        # Extract GPS coordinates and normalize
-        lats = [node["GpsInfo"]["Lat"] for node in json_data["Node"]]
-        longs = [node["GpsInfo"]["Long"] for node in json_data["Node"]]
+        self.json_data = None
+        self.output_file = None
+        self.nodes = {}
+        self.links = []
+        self.scale_factor = 1.0
+
+        self.canvas = Canvas(master, width=800, height=600, bg="white")
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+
+        self.node_items = {}
+        self.selected_node = None
+
+        self.canvas.bind("<ButtonPress-1>", self.on_click)
+        self.canvas.bind("<B1-Motion>", self.on_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_release)
+        self.canvas.bind("<Button-4>", self.zoom_in)
+        self.canvas.bind("<Button-5>", self.zoom_out)
+
+        self.menu = tk.Menu(self.master)
+        self.master.config(menu=self.menu)
+
+        file_menu = tk.Menu(self.menu, tearoff=0)
+        file_menu.add_command(label="Open", command=self.open_file)
+        file_menu.add_command(label="Save As", command=self.save_as)
+        self.menu.add_cascade(label="File", menu=file_menu)
+
+    def open_file(self):
+        input_file = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
+        if not input_file:
+            return
+
+        self.json_data = load_json(input_file)
+        self.output_file = input_file
+
+        lats = [node["GpsInfo"]["Lat"] for node in self.json_data["Node"]]
+        longs = [node["GpsInfo"]["Long"] for node in self.json_data["Node"]]
 
         self.lat_min, self.lat_max = min(lats), max(lats)
         self.long_min, self.long_max = min(longs), max(longs)
@@ -33,33 +64,31 @@ class NodeEditor:
             node["ID"]: self.normalize_coords(
                 node["GpsInfo"]["Long"], node["GpsInfo"]["Lat"]
             )
-            for node in json_data["Node"]
+            for node in self.json_data["Node"]
         }
 
-        self.links = [(link["FromNodeID"], link["ToNodeID"]) for link in json_data["Link"]]
-
-        self.canvas = Canvas(master, width=800, height=600, bg="white")
-        self.canvas.pack(fill=tk.BOTH, expand=True)
-
-        self.node_items = {}
-        self.selected_node = None
-
+        self.links = [(link["FromNodeID"], link["ToNodeID"]) for link in self.json_data["Link"]]
         self.draw_graph()
 
-        self.canvas.bind("<ButtonPress-1>", self.on_click)
-        self.canvas.bind("<B1-Motion>", self.on_drag)
-        self.canvas.bind("<ButtonRelease-1>", self.on_release)
+    def save_as(self):
+        output_file = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
+        if not output_file:
+            return
+
+        self.output_file = output_file
+        save_json(self.json_data, self.output_file)
+        print(f"Data saved to {self.output_file}")
 
     def normalize_coords(self, longitude, latitude):
         """Normalize GPS coordinates to fit canvas dimensions."""
-        x = (longitude - self.long_min) / (self.long_max - self.long_min) * 800
-        y = (latitude - self.lat_min) / (self.lat_max - self.lat_min) * 600
+        x = (longitude - self.long_min) / (self.long_max - self.long_min) * 800 * self.scale_factor
+        y = (latitude - self.lat_min) / (self.lat_max - self.lat_min) * 600 * self.scale_factor
         return x, y
 
     def denormalize_coords(self, x, y):
         """Convert canvas coordinates back to GPS values."""
-        longitude = x / 800 * (self.long_max - self.long_min) + self.long_min
-        latitude = y / 600 * (self.lat_max - self.lat_min) + self.lat_min
+        longitude = x / (800 * self.scale_factor) * (self.long_max - self.long_min) + self.long_min
+        latitude = y / (600 * self.scale_factor) * (self.lat_max - self.lat_min) + self.lat_min
         return longitude, latitude
 
     def draw_graph(self):
@@ -105,18 +134,25 @@ class NodeEditor:
             print(f"Node {self.selected_node} updated")
         self.selected_node = None
 
+    def zoom_in(self, event):
+        self.scale_factor *= 1.1
+        self.update_canvas()
+
+    def zoom_out(self, event):
+        self.scale_factor /= 1.1
+        self.update_canvas()
+
+    def update_canvas(self):
+        self.nodes = {
+            node_id: self.normalize_coords(*self.denormalize_coords(x, y))
+            for node_id, (x, y) in self.nodes.items()
+        }
+        self.draw_graph()
+
 
 if __name__ == "__main__":
-    input_file = "waypoint_graph.json"
-    output_file = "waypoint_graph_output.json"
-
-    print("Loading JSON data...")
-    data = load_json(input_file)
-
     print("Launching editor...")
     root = tk.Tk()
     root.title("Node Editor")
-    editor = NodeEditor(root, data, output_file)
+    editor = NodeEditor(root)
     root.mainloop()
-
-    print(f"Updated data saved to {output_file}")
