@@ -3,6 +3,7 @@ import rospy
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
 from pyproj import Proj, transform
+import tf
 
 def gps_to_utm(lat, lon):
     wgs84 = Proj(proj="latlong", datum="WGS84")
@@ -12,7 +13,7 @@ def gps_to_utm(lat, lon):
 
 def create_marker(marker_id, marker_type, position, scale, color):
     marker = Marker()
-    marker.header.frame_id = "world"
+    marker.header.frame_id = "waypoint"
     marker.header.stamp = rospy.Time.now()
     marker.ns = "waypoint_visualization"
     marker.id = marker_id
@@ -38,12 +39,35 @@ def create_marker(marker_id, marker_type, position, scale, color):
 
     return marker
 
-def parse_json_and_visualize(file_path):
+def parse_json_and_visualize(file_path, broadcaster):
     with open(file_path, 'r') as f:
         data = json.load(f)
 
     marker_array = MarkerArray()
     node_positions = {}
+
+    # 기준점 설정 (첫 번째 노드)
+    first_node = data["Node"][0]
+    lat, lon = first_node["GpsInfo"]["Lat"], first_node["GpsInfo"]["Long"]
+    ref_x, ref_y = gps_to_utm(lat, lon)
+
+    # TF 브로드캐스터로 start 프레임 설정
+    broadcaster.sendTransform(
+        (ref_x, ref_y, 0),  # Translation
+        (0, 0, 0, 1),       # Rotation (identity quaternion)
+        rospy.Time.now(),
+        "start",
+        "map"
+    )
+
+    # TF 브로드캐스터로 waypoint 프레임 설정
+    broadcaster.sendTransform(
+        (0, 0, 0),  # Translation
+        (0, 0, 0, 1),  # Rotation (identity quaternion)
+        rospy.Time.now(),
+        "waypoint",
+        "start"
+    )
 
     # Process Nodes
     for i, node in enumerate(data["Node"]):
@@ -51,8 +75,7 @@ def parse_json_and_visualize(file_path):
         gps_info = node["GpsInfo"]
         lat, lon, alt = gps_info["Lat"], gps_info["Long"], gps_info["Alt"]
         utm_x, utm_y = gps_to_utm(lat, lon)
-        print(utm_x, utm_y)
-        position = [utm_x, utm_y, alt]
+        position = [utm_x - ref_x, utm_y - ref_y, alt]
         node_positions[node_id] = position
 
         cube_marker = create_marker(
@@ -71,7 +94,7 @@ def parse_json_and_visualize(file_path):
 
         if from_node in node_positions and to_node in node_positions:
             line_marker = Marker()
-            line_marker.header.frame_id = "world"
+            line_marker.header.frame_id = "waypoint"
             line_marker.header.stamp = rospy.Time.now()
             line_marker.ns = "waypoint_visualization"
             line_marker.id = len(data["Node"]) + j
@@ -96,12 +119,13 @@ def parse_json_and_visualize(file_path):
 def main():
     rospy.init_node('waypoint_visualization')
     marker_pub = rospy.Publisher('visualization_marker_array', MarkerArray, queue_size=10)
+    tf_broadcaster = tf.TransformBroadcaster()
 
-    file_path = '/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/src/waypoint_graph.json'  # Update with actual path
-    marker_array = parse_json_and_visualize(file_path)
+    file_path = '/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/src/20250103_waypoint_graph.json'  # Update with actual path
 
     rate = rospy.Rate(1)  # 10 Hz
     while not rospy.is_shutdown():
+        marker_array = parse_json_and_visualize(file_path, tf_broadcaster)
         marker_pub.publish(marker_array)
         rate.sleep()
 
