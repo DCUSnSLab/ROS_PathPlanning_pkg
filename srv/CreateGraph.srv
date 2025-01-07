@@ -1,0 +1,4 @@
+string file_path
+---
+string graph_json
+string node_json

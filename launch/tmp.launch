@@ -1,7 +1,11 @@
+<?xml version="1.0"?>
 <launch>
     <!-- visualize_path.py 실행 -->
     <node name="visualize_path_node" pkg="path_planning" type="visualize_path.py" output="screen" />
 
     <!-- A-star_path.py 실행 -->
     <node name="a_star_path_node" pkg="path_planning" type="A-star_path.py" output="screen" />
+
+
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find path_planning)/rviz/rviz_config.rviz" output="screen" />
 </launch>

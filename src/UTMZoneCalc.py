@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 def calculate_utm_zone(lat, lon):
     """
     Calculate the UTM Zone and Hemisphere based on GPS coordinates.

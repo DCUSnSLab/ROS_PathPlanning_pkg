@@ -1,20 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import rospy
 from visualization_msgs.msg import MarkerArray, Marker
 from geometry_msgs.msg import PoseStamped, Point
 from std_msgs.msg import String
 from nav_msgs.msg import Path
 from morai_msgs.msg import GPSMessage
-'''
-Header header
-
-float64 latitude
-float64 longitude
-float64 altitude
-
-float64 eastOffset
-float64 northOffset
-int16 status
-'''
 import math
 import heapq
 from pyproj import Proj, transform
@@ -23,13 +15,15 @@ class PathPlanner:
     def __init__(self):
         rospy.init_node('path_planner')
 
-        self.graph = {}
+        self.graph = None  # Change to None to allow lazy initialization
         self.current_position = None
         self.goal_position = None
 
         self.wgs84 = Proj(init='epsg:4326')  # WGS84 coordinate system
         self.utm = Proj(zone=52, init='epsg:32633')  # UTM zone 33N (example, change based on your region)
         # utm = Proj(proj="utm", datum="WGS84")  # Adjust zone as needed
+
+        self.marker_array_received = False  # Track whether the marker array has been processed
 
         rospy.Subscriber('/visualization_marker_array', MarkerArray, self.marker_array_callback)
         rospy.Subscriber('/gps', GPSMessage, self.gps_callback)
@@ -40,11 +34,15 @@ class PathPlanner:
 
     def marker_array_callback(self, marker_array):
         """Callback to process the MarkerArray and construct the graph."""
-        self.graph = {}
-        for marker in marker_array.markers:
-            node = (marker.pose.position.x, marker.pose.position.y)
-            neighbors = [(edge.x, edge.y) for edge in marker.points]
-            self.graph[node] = neighbors
+        if not self.marker_array_received:  # Process only once
+            rospy.loginfo("Processing MarkerArray for the first time.")
+            self.graph = {}
+            for marker in marker_array.markers:
+                node = (marker.pose.position.x, marker.pose.position.y)
+                neighbors = [(edge.x, edge.y) for edge in marker.points]
+                self.graph[node] = neighbors
+            print(self.graph)
+            self.marker_array_received = True
 
     def gps_callback(self, gps_msg):
         """Callback to update the current position with UTM coordinates."""
@@ -52,9 +50,9 @@ class PathPlanner:
         utm_x, utm_y = transform(self.wgs84, self.utm, gps_msg.longitude, gps_msg.latitude)
         rospy.loginfo(f"Converted UTM coordinates: UTM_X: {utm_x}, UTM_Y: {utm_y}")
         self.current_position = (utm_x, utm_y)
-        self.publish_utm_marker(utm_x, utm_y)
+        self.publish_utm_marker(utm_x, utm_y, gps_msg.altitude)
 
-    def publish_utm_marker(self, utm_x, utm_y):
+    def publish_utm_marker(self, utm_x, utm_y, altitude):
         """Publish the UTM position as a visualization marker."""
         marker = Marker()
         marker.header.frame_id = "waypoint"
@@ -65,7 +63,7 @@ class PathPlanner:
         marker.action = Marker.ADD
         marker.pose.position.x = utm_x
         marker.pose.position.y = utm_y
-        marker.pose.position.z = 0
+        marker.pose.position.z = altitude
         marker.pose.orientation.x = 0.0
         marker.pose.orientation.y = 0.0
         marker.pose.orientation.z = 0.0
@@ -81,10 +79,13 @@ class PathPlanner:
         self.utm_marker_pub.publish(marker)
 
     def goal_callback(self, goal_msg):
+        print("goal callback")
         """Callback to update the goal position and compute the path."""
         self.goal_position = (goal_msg.pose.position.x, goal_msg.pose.position.y)
         if self.current_position and self.goal_position:
+            print(self.current_position, self.goal_position)
             path = self.a_star(self.current_position, self.goal_position)
+            print(path)
             self.publish_path(path)
 
     def heuristic(self, node, goal):
@@ -137,6 +138,7 @@ class PathPlanner:
         for node in path:
             pose = Point()
             pose.x, pose.y = node
+            print(pose.x, pose.y)
             path_msg.poses.append(pose)
 
         self.path_pub.publish(path_msg)

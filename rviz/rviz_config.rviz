@@ -65,7 +65,7 @@ Visualization Manager:
       Marker Topic: /ego_vehicle
       Name: Marker
       Namespaces:
-        {}
+        utm_position: true
       Queue Size: 100
       Value: true
   Enabled: true
@@ -132,5 +132,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1956
-  X: 2722
-  Y: 705
+  X: 3059
+  Y: 743

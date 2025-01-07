@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import json
 import rospy
 from visualization_msgs.msg import Marker, MarkerArray
