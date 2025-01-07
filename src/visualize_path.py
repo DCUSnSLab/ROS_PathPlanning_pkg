@@ -37,6 +37,8 @@ def create_marker(marker_id, marker_type, position, scale, color):
     marker.color.b = color[2]
     marker.color.a = color[3]
 
+    marker.lifetime = rospy.Duration(0)
+
     return marker
 
 def parse_json_and_visualize(file_path):
@@ -46,10 +48,11 @@ def parse_json_and_visualize(file_path):
     marker_array = MarkerArray()
     node_positions = {}
 
-    # 기준점 설정 (첫 번째 노드)
+    # 첫 번째 노드의 UTM 좌표와 고도를 계산
     first_node = data["Node"][0]
-    lat, lon = first_node["GpsInfo"]["Lat"], first_node["GpsInfo"]["Long"]
+    lat, lon, alt = first_node["GpsInfo"]["Lat"], first_node["GpsInfo"]["Long"], first_node["GpsInfo"]["Alt"]
     ref_x, ref_y = gps_to_utm(lat, lon)
+    ref_z = alt
 
     # Process Nodes
     for i, node in enumerate(data["Node"]):
@@ -57,7 +60,7 @@ def parse_json_and_visualize(file_path):
         gps_info = node["GpsInfo"]
         lat, lon, alt = gps_info["Lat"], gps_info["Long"], gps_info["Alt"]
         utm_x, utm_y = gps_to_utm(lat, lon)
-        position = [utm_x - ref_x, utm_y - ref_y, alt]
+        position = [utm_x, utm_y, alt]
         node_positions[node_id] = position
 
         cube_marker = create_marker(
@@ -96,32 +99,32 @@ def parse_json_and_visualize(file_path):
 
             marker_array.markers.append(line_marker)
 
-    return marker_array, ref_x, ref_y
+    return marker_array, ref_x, ref_y, ref_z
 
 def main():
     rospy.init_node('waypoint_visualization')
-    marker_pub = rospy.Publisher('visualization_marker_array', MarkerArray, queue_size=10)
+    marker_pub = rospy.Publisher('visualization_marker_array', MarkerArray, queue_size=10, latch=True)
     tf_broadcaster = tf.TransformBroadcaster()
 
-    file_path = '/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/src/20250103_waypoint_graph.json'  # Update with actual path
+    file_path = '/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/src/20250107_waypoint_graph_2.json'  # Update with actual path
 
-    # JSON 파일을 읽어 MarkerArray와 기준점을 생성
-    marker_array, ref_x, ref_y = parse_json_and_visualize(file_path)
+    # JSON 파일을 읽어 MarkerArray와 기준 좌표(Utm 좌표 및 고도)를 생성
+    marker_array, ref_x, ref_y, ref_z = parse_json_and_visualize(file_path)
 
-    rate = rospy.Rate(2)  # 2 Hz
+    #rate = rospy.Rate(1)  # 2 Hz
     while not rospy.is_shutdown():
-        # TF 브로드캐스트는 계속 수행
+        # TF 브로드캐스트 수행 (기준 좌표 사용)
         current_time = rospy.Time.now()
         tf_broadcaster.sendTransform(
-            (ref_x, ref_y, 0),  # Translation
-            (0, 0, 0, 1),       # Rotation (identity quaternion)
+            (ref_x, ref_y, ref_z),  # Translation (기준 Lat, Long, Alt에 해당하는 UTM 좌표)
+            (0, 0, 0, 1),           # Rotation (identity quaternion)
             current_time,
             "waypoint",
             "map"
         )
         # 미리 생성한 MarkerArray를 Publish
         marker_pub.publish(marker_array)
-        rate.sleep()
+        #rate.sleep()
 
 if __name__ == '__main__':
     try:
