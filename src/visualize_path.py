@@ -7,14 +7,14 @@ import tf
 
 def gps_to_utm(lat, lon):
     wgs84 = Proj(proj="latlong", datum="WGS84")
-    utm = Proj(proj="utm", zone=33, datum="WGS84")  # Adjust zone as needed
+    utm = Proj(proj="utm", zone=52, datum="WGS84")  # Adjust zone as needed
     x, y = transform(wgs84, utm, lon, lat)  # Note: (lon, lat) order
     return x, y
 
 def create_marker(marker_id, marker_type, position, scale, color):
     marker = Marker()
     marker.header.frame_id = "waypoint"
-    marker.header.stamp = rospy.Time.now()
+    marker.header.stamp = rospy.Time.now()  # Ensures consistent timestamp
     marker.ns = "waypoint_visualization"
     marker.id = marker_id
     marker.type = marker_type
@@ -39,7 +39,7 @@ def create_marker(marker_id, marker_type, position, scale, color):
 
     return marker
 
-def parse_json_and_visualize(file_path, broadcaster):
+def parse_json_and_visualize(file_path):
     with open(file_path, 'r') as f:
         data = json.load(f)
 
@@ -50,24 +50,6 @@ def parse_json_and_visualize(file_path, broadcaster):
     first_node = data["Node"][0]
     lat, lon = first_node["GpsInfo"]["Lat"], first_node["GpsInfo"]["Long"]
     ref_x, ref_y = gps_to_utm(lat, lon)
-
-    # TF 브로드캐스터로 start 프레임 설정
-    broadcaster.sendTransform(
-        (ref_x, ref_y, 0),  # Translation
-        (0, 0, 0, 1),       # Rotation (identity quaternion)
-        rospy.Time.now(),
-        "start",
-        "map"
-    )
-
-    # TF 브로드캐스터로 waypoint 프레임 설정
-    broadcaster.sendTransform(
-        (0, 0, 0),  # Translation
-        (0, 0, 0, 1),  # Rotation (identity quaternion)
-        rospy.Time.now(),
-        "waypoint",
-        "start"
-    )
 
     # Process Nodes
     for i, node in enumerate(data["Node"]):
@@ -114,7 +96,7 @@ def parse_json_and_visualize(file_path, broadcaster):
 
             marker_array.markers.append(line_marker)
 
-    return marker_array
+    return marker_array, ref_x, ref_y
 
 def main():
     rospy.init_node('waypoint_visualization')
@@ -123,9 +105,21 @@ def main():
 
     file_path = '/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/src/20250103_waypoint_graph.json'  # Update with actual path
 
-    rate = rospy.Rate(1)  # 10 Hz
+    # JSON 파일을 읽어 MarkerArray와 기준점을 생성
+    marker_array, ref_x, ref_y = parse_json_and_visualize(file_path)
+
+    rate = rospy.Rate(2)  # 2 Hz
     while not rospy.is_shutdown():
-        marker_array = parse_json_and_visualize(file_path, tf_broadcaster)
+        # TF 브로드캐스트는 계속 수행
+        current_time = rospy.Time.now()
+        tf_broadcaster.sendTransform(
+            (ref_x, ref_y, 0),  # Translation
+            (0, 0, 0, 1),       # Rotation (identity quaternion)
+            current_time,
+            "waypoint",
+            "map"
+        )
+        # 미리 생성한 MarkerArray를 Publish
         marker_pub.publish(marker_array)
         rate.sleep()
 

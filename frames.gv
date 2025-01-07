@@ -1,0 +1,11 @@
+digraph G {
+"map" -> "base_link"[label="Broadcaster: /rosbridge_websocket\nAverage rate: 50.231 Hz\nMost recent transform: 1736234945.123 ( 0.010 sec old)\nBuffer length: 4.977 sec\n"];
+"base_link" -> "velodyne"[label="Broadcaster: /rosbridge_websocket\nAverage rate: 50.231 Hz\nMost recent transform: 1736234945.123 ( 0.010 sec old)\nBuffer length: 4.977 sec\n"];
+"base_link" -> "gps"[label="Broadcaster: /rosbridge_websocket\nAverage rate: 50.231 Hz\nMost recent transform: 1736234945.123 ( 0.010 sec old)\nBuffer length: 4.977 sec\n"];
+"base_link" -> "imu"[label="Broadcaster: /rosbridge_websocket\nAverage rate: 50.231 Hz\nMost recent transform: 1736234945.123 ( 0.010 sec old)\nBuffer length: 4.977 sec\n"];
+"map" -> "waypoint"[label="Broadcaster: /waypoint_visualization\nAverage rate: 1.250 Hz\nMost recent transform: 1736234944.726 ( 0.407 sec old)\nBuffer length: 4.001 sec\n"];
+edge [style=invis];
+ subgraph cluster_legend { style=bold; color=black; label ="view_frames Result";
+"Recorded at time: 1736234945.133"[ shape=plaintext ] ;
+ }->"map";
+}

@@ -1,235 +1,146 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import rospy
-import json
-import math
-import sys
-import heapq
-
-from geometry_msgs.msg import PoseStamped, PolygonStamped, Point32
 from visualization_msgs.msg import MarkerArray, Marker
-from std_msgs.msg import ColorRGBA, Header
-from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseStamped, Point
+from std_msgs.msg import String
+from nav_msgs.msg import Path
+from morai_msgs.msg import GPSMessage
+'''
+Header header
 
+float64 latitude
+float64 longitude
+float64 altitude
 
-class Graph(object):
-    def __init__(self, init_graph):
-        self.nodes = [n for n in range(len(init_graph))]
-        # 노드 이름 정의
-        self.graph = self.construct_graph(init_graph)
+float64 eastOffset
+float64 northOffset
+int16 status
+'''
+import math
+import heapq
+from pyproj import Proj, transform
 
-    def construct_graph(self, init_graph):
-        # init_graph에 명시된 값을 바탕으로 그래프를 생성한다.
-        # print(init_graph)
-        graph = {}
-        for name in init_graph:
-            graph[name] = {}
+class PathPlanner:
+    def __init__(self):
+        rospy.init_node('path_planner')
 
-        graph.update(init_graph)
+        self.graph = {}
+        self.current_position = None
+        self.goal_position = None
 
-        for node, edges in graph.items():
-            for adjacent_node, value in edges.items():
-                if graph[adjacent_node].get(node, False) == False:
-                    graph[adjacent_node][node] = value
+        self.wgs84 = Proj(init='epsg:4326')  # WGS84 coordinate system
+        self.utm = Proj(zone=52, init='epsg:32633')  # UTM zone 33N (example, change based on your region)
+        # utm = Proj(proj="utm", datum="WGS84")  # Adjust zone as needed
 
-        return graph
+        rospy.Subscriber('/visualization_marker_array', MarkerArray, self.marker_array_callback)
+        rospy.Subscriber('/gps', GPSMessage, self.gps_callback)
+        rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goal_callback)
 
-    def get_nodes(self):
-        return self.nodes
+        self.path_pub = rospy.Publisher('/planned_path', Path, queue_size=10)
+        self.utm_marker_pub = rospy.Publisher('/ego_vehicle', Marker, queue_size=10)
 
-    def get_outgoing_edges(self, node):
-        connections = []
-        for out_node in self.nodes:
-            if self.graph[node].get(out_node, False) != False:
-                connections.append(out_node)
-        return connections
+    def marker_array_callback(self, marker_array):
+        """Callback to process the MarkerArray and construct the graph."""
+        self.graph = {}
+        for marker in marker_array.markers:
+            node = (marker.pose.position.x, marker.pose.position.y)
+            neighbors = [(edge.x, edge.y) for edge in marker.points]
+            self.graph[node] = neighbors
 
-    def value(self, node1, node2):
-        ''' node1, node2의 거리에 해당하는 값을 리턴한다. '''
-        return self.graph[node1][node2]
+    def gps_callback(self, gps_msg):
+        """Callback to update the current position with UTM coordinates."""
+        rospy.loginfo(f"Received GPS coordinates: Latitude: {gps_msg.latitude}, Longitude: {gps_msg.longitude}")
+        utm_x, utm_y = transform(self.wgs84, self.utm, gps_msg.longitude, gps_msg.latitude)
+        rospy.loginfo(f"Converted UTM coordinates: UTM_X: {utm_x}, UTM_Y: {utm_y}")
+        self.current_position = (utm_x, utm_y)
+        self.publish_utm_marker(utm_x, utm_y)
 
+    def publish_utm_marker(self, utm_x, utm_y):
+        """Publish the UTM position as a visualization marker."""
+        marker = Marker()
+        marker.header.frame_id = "waypoint"
+        marker.header.stamp = rospy.Time.now()
+        marker.ns = "utm_position"
+        marker.id = 0
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        marker.pose.position.x = utm_x
+        marker.pose.position.y = utm_y
+        marker.pose.position.z = 0
+        marker.pose.orientation.x = 0.0
+        marker.pose.orientation.y = 0.0
+        marker.pose.orientation.z = 0.0
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = 4.0
+        marker.scale.y = 4.0
+        marker.scale.z = 4.0
+        marker.color.a = 1.0  # Alpha
+        marker.color.r = 0.0
+        marker.color.g = 1.0
+        marker.color.b = 0.0
 
-class AStar():
-    def __init__(self, vertices):
-        print("AStar() __init__ called.")
-        self.vertices = vertices  # 원본 json 파일
-        self.init_graph = {}
-        self.construct_graph()
+        self.utm_marker_pub.publish(marker)
 
-    def construct_graph(self):
-        print("construct_graph() called.")
-        for idx, vertex in enumerate(self.vertices):
-            self.init_graph[idx] = {}
-            if vertex["adjacent"]:  # 인접한 Vertex가 있는 경우
-                for adjacent in vertex["adjacent"]:  # 각 인접 vertex에 대한 dict 생성 및 거리값 초기화
-                    self.init_graph[idx][adjacent] = self.calcdistance(idx, adjacent)
+    def goal_callback(self, goal_msg):
+        """Callback to update the goal position and compute the path."""
+        self.goal_position = (goal_msg.pose.position.x, goal_msg.pose.position.y)
+        if self.current_position and self.goal_position:
+            path = self.a_star(self.current_position, self.goal_position)
+            self.publish_path(path)
 
-        self.graph = Graph(self.init_graph)
-        print("construct_graph() end.")
+    def heuristic(self, node, goal):
+        """Heuristic function for A* (Euclidean distance)."""
+        return math.sqrt((node[0] - goal[0]) ** 2 + (node[1] - goal[1]) ** 2)
 
-    def insert_vertex(self, target_vertex, adjacent_vertex_idx, adjacent_vertex):
-        """
-		self.init_graph에 현재 위치, 목표 위치 값을 추가한 뒤
-		self.graph에 새로 생성된 그래프를 추가
-		"""
-        self.init_graph[len(self.init_graph)] = {}
-        self.init_graph[len(self.init_graph) - 1][adjacent_vertex_idx] = self.calcdistance_between_vertex(target_vertex,
-                                                                                                          adjacent_vertex)
-
-    def find_nearest_vertex(self, target_vertex):
-        """
-		target_vertex와 가장 근접한 vertex를 찾은 뒤
-		해당 vertex의 index와 실제 값을 리턴한다.
-		"""
-        distance = sys.maxsize
-        nearest_vertex = None
-        index = None
-        for idx, vertex in enumerate(self.vertices):
-            result = self.calcdistance_between_vertex(target_vertex, vertex)
-            if result < distance:
-                distance = result
-                nearest_vertex = self.vertices[idx]
-                index = idx
-        return nearest_vertex, index
-
-    def calc_path(self, start, goal):
-        previous_nodes, shortest_path = self.a_star_algorithm(graph=self.graph, start_node=start, goal_node=goal)
-        path = self.print_result(previous_nodes, shortest_path, start_node=start, target_node=goal)
-        self.path = path
-
-    def a_star_algorithm(self, graph, start_node, goal_node):
-        open_set = set([start_node])
-        closed_set = set()
-
-        # 모든 노드에 대해 g_score를 무한대로 초기화
-        g_score = {node: float('inf') for node in graph.get_nodes()}
-        g_score[start_node] = 0
-
-        # 모든 노드에 대해 f_score를 무한대로 초기화
-        f_score = {node: float('inf') for node in graph.get_nodes()}
-        f_score[start_node] = self.heuristic(start_node, goal_node)
-
+    def a_star(self, start, goal):
+        """A* algorithm implementation."""
+        open_set = []
+        heapq.heappush(open_set, (0, start))
         came_from = {}
+        g_score = {node: float('inf') for node in self.graph}
+        g_score[start] = 0
+        f_score = {node: float('inf') for node in self.graph}
+        f_score[start] = self.heuristic(start, goal)
 
         while open_set:
-            current = min(open_set, key=lambda node: f_score[node])
+            _, current = heapq.heappop(open_set)
 
-            if current == goal_node:
-                return came_from, f_score
+            if current == goal:
+                return self.reconstruct_path(came_from, current)
 
-            open_set.remove(current)
-            closed_set.add(current)
+            for neighbor in self.graph.get(current, []):
+                tentative_g_score = g_score[current] + self.heuristic(current, neighbor)
+                if tentative_g_score < g_score[neighbor]:
+                    came_from[neighbor] = current
+                    g_score[neighbor] = tentative_g_score
+                    f_score[neighbor] = tentative_g_score + self.heuristic(neighbor, goal)
+                    if neighbor not in [item[1] for item in open_set]:
+                        heapq.heappush(open_set, (f_score[neighbor], neighbor))
 
-            for neighbor in graph.get_outgoing_edges(current):
-                if neighbor in closed_set:
-                    continue
+        return []  # Return an empty path if no path is found
 
-                tentative_g_score = g_score[current] + graph.value(current, neighbor)
-
-                if neighbor not in open_set:
-                    open_set.add(neighbor)
-                elif tentative_g_score >= g_score[neighbor]:
-                    continue
-
-                came_from[neighbor] = current
-                g_score[neighbor] = tentative_g_score
-                f_score[neighbor] = g_score[neighbor] + self.heuristic(neighbor, goal_node)
-
-        return came_from, f_score
-
-    def heuristic(self, node, goal_node):
-        node_position = self.vertices[node]["xy"]
-        goal_position = self.vertices[goal_node]["xy"]
-        return math.sqrt((node_position[0] - goal_position[0]) ** 2 + (node_position[1] - goal_position[1]) ** 2)
-
-    def print_result(self, previous_nodes, f_score, start_node, target_node):
+    def reconstruct_path(self, came_from, current):
+        """Reconstruct the path from the came_from map."""
         path = []
-        refined_path = list()
-        node = target_node
-
-        while node != start_node:  # 시작 노드에 도달할 때 까지 반복
-            path.append(node)
-            node = previous_nodes[node]
-
-        path.append(start_node)
-
-        for vertex in reversed(path):
-            refined_path.append(vertex)
+        while current in came_from:
+            path.append(current)
+            current = came_from[current]
+        path.append(current)
+        path.reverse()
         return path
 
-    def get_path(self):
-        return self.path
+    def publish_path(self, path):
+        """Publish the planned path as a nav_msgs/Path message."""
+        path_msg = Path()
+        path_msg.header.stamp = rospy.Time.now()
+        path_msg.header.frame_id = 'waypoint'
 
-    def calcdistance_between_vertex(self, start, dst):
-        """ 입력받은 start, dst Vertex의 거리 값 계산 후 리턴"""
-        return math.sqrt(math.pow(start["xy"][0] - dst["xy"][0], 2) + math.pow(start["xy"][1] - dst["xy"][1], 2))
+        for node in path:
+            pose = Point()
+            pose.x, pose.y = node
+            path_msg.poses.append(pose)
 
-    def calcdistance(self, start, dst):
-        """ 입력받은 start, dst Vertex의 index 값을 사용하여 거리 값 계산 후 리턴"""
-        return math.sqrt(math.pow(self.vertices[int(start)]["xy"][0] - self.vertices[int(dst)]["xy"][0], 2) + math.pow(
-            self.vertices[int(start)]["xy"][1] - self.vertices[int(dst)]["xy"][1], 2))
+        self.path_pub.publish(path_msg)
 
-
-class DefinedWaypoints():
-    def __init__(self):
-        print("DefinedWaypoints() __init__ called")
-        self.pub = rospy.Publisher("/defined_vertices", MarkerArray, queue_size=1)
-        self.path_pub = rospy.Publisher("/refined_vertices", MarkerArray, queue_size=1)
-        self.waypointlist = MarkerArray()
-        self.rate = rospy.Rate(1)
-
-        self.pointlist = list()
-
-        self.start_vertex = None
-
-        args = sys.argv
-
-        self.json_file_path = None
-
-        if (args[1] != None and args[1][0:6] != "__name"):
-            self.json_file_path = args[1]
-
-        else:
-            self.json_file_path = rospy.get_param('~json_file')
-
-        with open(self.json_file_path) as f:
-            json_input = json.load(f)
-
-        self.a_star = AStar(json_input)
-
-        for vertex in json_input:
-            self.pointlist.append(vertex["xy"])
-
-        for idx, point in enumerate(self.pointlist):
-            self.waypointlist.markers.append(self.add_waypoint(idx, point))
-
-        self.nav_goal_sub = rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.goal_point_callback,
-                                             queue_size=1)
-        self.nav_start_sub = rospy.Subscriber("/odom", Odometry, self.current_pos_callback, queue_size=1)
-        print("DefinedWaypoints() __init__ end")
-        self.pub.publish(self.waypointlist)
-        rospy.spin()
-
-    def goal_point_callback(self, data):
-        goal_position = {
-            "xy": [data.pose.position.x, data.pose.position.y],
-            "adjacent": None
-        }
-        current_position = {
-            "xy": [self.start_vertex.pose.pose.position.x, self.start_vertex.pose.pose.position.y],
-            "adjacent": None
-        }
-        start_nearest_vertex, start_nearest_vertex_idx = self.a_star.find_nearest_vertex(goal_position)
-        goal_position["adjacent"] = start_nearest_vertex_idx
-
-        goal_nearest_vertex, goal_nearest_vertex_idx = self.a_star.find_nearest_vertex(current_position)
-        current_position["adjacent"] = goal_nearest_vertex_idx
-
-        self.a_star.insert_vertex(current_position, start_nearest_vertex_idx, start_nearest_vertex)
-        self.a_star.insert_vertex(goal_position, goal_nearest_vertex_idx, goal_nearest_vertex)
-        self.a_star.construct_graph()
-
-        self.a_star.calc_path(len(self.a_star.init_graph) - 2, len(self.a_star.init_graph) - 1)
-
-# 생성된 경
+if __name__ == '__main__':
+    planner = PathPlanner()
+    rospy.spin()
