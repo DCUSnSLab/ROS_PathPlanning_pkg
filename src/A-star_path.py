@@ -9,10 +9,8 @@ from nav_msgs.msg import Path
 from morai_msgs.msg import GPSMessage
 import math
 import heapq
-import rospy
 import json
 from visualization_msgs.msg import Marker, MarkerArray
-from geometry_msgs.msg import Point
 from pyproj import Proj, CRS, transform, Transformer
 import tf
 
@@ -46,9 +44,7 @@ class PathPlanner:
         self.marker_array, self.ref_x, self.ref_y, self.ref_z = parse_json_and_visualize(self.file_path)
 
         self.wgs84 = Proj(init='epsg:4326')  # WGS84 coordinate system
-        # self.wgs84 = CRS.from_epsg(4326)
         self.utm = Proj(zone=self.utm_zone, init='epsg:32633')
-        # utm = Proj(proj="utm", datum="WGS84")  # Adjust zone as needed
 
         rospy.Subscriber('/gps', GPSMessage, self.gps_callback)
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goal_callback)
@@ -74,30 +70,75 @@ class PathPlanner:
             self.marker_pub.publish(self.marker_array)
             rate.sleep()
 
+    def gps_callback(self, gps_msg):
+        """Callback to update the current position with UTM coordinates."""
+        self.current_position_gps = (gps_msg.latitude, gps_msg.longitude, gps_msg.altitude)
+        utm_x, utm_y = self.transformer_to_utm.transform(gps_msg.longitude, gps_msg.latitude)
+        self.current_position_utm = (utm_x, utm_y)
+
+        # origin_utm은 Node의 첫 번째 좌표로 설정되므로 여기서는 설정하지 않음
+        relative_x = utm_x - self.origin_utm[0]
+        relative_y = utm_y - self.origin_utm[1]
+
+        # self.publish_utm_marker(utm_x, utm_y, gps_msg.altitude)
+        self.publish_utm_marker(relative_x, relative_y, gps_msg.altitude) # Display with relative coord
+
+    def goal_callback(self, goal_msg):
+        # Start 및 Goal 노드 삭제
+        self.remove_node("Start")
+        self.remove_node("Goal")
+
+        # Start 노드 생성
+        start_node = self.add_node(
+            id="Start",
+            lat=self.current_position_gps[0],
+            lon=self.current_position_gps[1],
+            alt=self.current_position_gps[2],
+            graph=self.graph,
+            nodes=self.nodes
+        )
+
+        # RViz Goal 좌표를 self.origin_utm 기준으로 보정
+        relative_goal_x = goal_msg.pose.position.x
+        relative_goal_y = goal_msg.pose.position.y
+        relative_goal_z = goal_msg.pose.position.z
+        adjusted_goal_x = self.origin_utm[0] + relative_goal_x
+        adjusted_goal_y = self.origin_utm[1] + relative_goal_y
+        adjusted_goal_z = relative_goal_z
+
+        # 보정된 UTM → GPS 변환
+        goal_lat, goal_lon = self.utm_to_gps(adjusted_goal_x, adjusted_goal_y, self.utm_zone, True)
+        goal_node = self.add_node("Goal", goal_lat, goal_lon, adjusted_goal_z, self.graph, self.nodes)
+
+        # A* 경로 계산 및 Publish
+        path = self.a_star(self.graph, self.nodes, start_node, goal_node)
+        if path:
+            self.publish_path(path)
+
     def load_graph_data(self):
         root = Tk()
         root.withdraw()  # Hide the root window
         root.title("Select a JSON File")
 
-        # Open file dialog
         self.file_path = filedialog.askopenfilename(
             title="Select a JSON File",
             filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
         )
 
-        if self.file_path:
-            rospy.loginfo("Selected file: %s", self.file_path)
-            self.call_service(self.file_path)
-
-            # Node의 첫 번째 좌표를 UTM으로 변환하여 origin 설정
-            if self.nodes:
-                first_node = list(self.nodes.values())[0]  # 첫 번째 노드 가져오기
-                lat, lon = first_node["GpsInfo"]["Lat"], first_node["GpsInfo"]["Long"]
-                utm_x, utm_y = self.transformer_to_utm.transform(lon, lat)
-                self.origin_utm = (utm_x, utm_y)  # 기준 UTM 좌표 설정
-                rospy.loginfo(f"Set origin UTM from first Node: {self.origin_utm}")
-        else:
+        if not self.file_path:
             rospy.logwarn("No file selected.")
+            return
+
+        rospy.loginfo(f"Selected file: {self.file_path}")
+        self.call_service(self.file_path)
+
+        # Node의 첫 번째 좌표를 UTM으로 변환하여 origin 설정
+        if self.nodes:
+            first_node = list(self.nodes.values())[0]
+            lat, lon = first_node["GpsInfo"]["Lat"], first_node["GpsInfo"]["Long"]
+            utm_x, utm_y = self.transformer_to_utm.transform(lon, lat)
+            self.origin_utm = (utm_x, utm_y)
+            rospy.loginfo(f"Set origin UTM from first Node: {self.origin_utm}")
 
     def call_service(self, file_path):
         """Call the ROS service with the selected JSON file path."""
@@ -113,19 +154,6 @@ class PathPlanner:
         except rospy.ServiceException as e:
             rospy.logerr("Service call failed: %s", e)
             messagebox.showerror("Service Error", f"Service call failed: {e}")
-
-    def gps_callback(self, gps_msg):
-        """Callback to update the current position with UTM coordinates."""
-        self.current_position_gps = (gps_msg.latitude, gps_msg.longitude, gps_msg.altitude)
-        utm_x, utm_y = self.transformer_to_utm.transform(gps_msg.longitude, gps_msg.latitude)
-        self.current_position_utm = (utm_x, utm_y)
-
-        # origin_utm은 Node의 첫 번째 좌표로 설정되므로 여기서는 설정하지 않음
-        relative_x = utm_x - self.origin_utm[0]
-        relative_y = utm_y - self.origin_utm[1]
-
-        # self.publish_utm_marker(utm_x, utm_y, gps_msg.altitude)
-        self.publish_utm_marker(relative_x, relative_y, gps_msg.altitude) # Display with relative coord
 
     def publish_utm_marker(self, utm_x, utm_y, altitude):
         """Publish the UTM position as a visualization marker."""
@@ -179,62 +207,6 @@ class PathPlanner:
         longitude, latitude = transformer.transform(easting, northing)
 
         return latitude, longitude
-
-    def goal_callback(self, goal_msg):
-        if "Start" in self.nodes:
-            del self.nodes["Start"]
-            if "Start" in self.graph:
-                for neighbor, _ in self.graph["Start"]:
-                    self.graph[neighbor] = [
-                        (n, w) for n, w in self.graph[neighbor] if n != "Start"
-                    ]
-                del self.graph["Start"]
-
-        if "Goal" in self.nodes:
-            del self.nodes["Goal"]
-            if "Goal" in self.graph:
-                for neighbor, _ in self.graph["Goal"]:
-                    self.graph[neighbor] = [
-                        (n, w) for n, w in self.graph[neighbor] if n != "Goal"
-                    ]
-                del self.graph["Goal"]
-
-        # print(goal_msg)
-        # print(self.current_position_gps[0], self.current_position_gps[1])
-        #print(self.graph)
-        #print(self.nodes)
-        print("self.current_position_gps")
-        print(self.current_position_gps)
-        start_node = self.add_node(id="Start", lat=self.current_position_gps[0], lon=self.current_position_gps[1], alt=self.current_position_gps[2], graph=self.graph, nodes=self.nodes)
-
-        # RViz Goal 좌표를 self.origin_utm을 기준으로 보정하여 가상의 UTM 좌표 계산
-        relative_goal_x = goal_msg.pose.position.x
-        relative_goal_y = goal_msg.pose.position.y
-        relative_goal_z = goal_msg.pose.position.z
-
-        # 보정된 UTM 좌표 계산
-        adjusted_goal_x = self.origin_utm[0] + relative_goal_x
-        adjusted_goal_y = self.origin_utm[1] + relative_goal_y
-        adjusted_goal_z = relative_goal_z  # Z 값은 그대로 사용
-
-        #print("goal callback")
-        #print(goal_msg)
-
-        # goal_gps = self.utm_to_gps(goal_msg.pose.position.x, goal_msg.pose.position.y, self.utm_zone, True)
-
-        goal_lat, goal_lon = self.utm_to_gps(adjusted_goal_x, adjusted_goal_y, self.utm_zone, True)
-        print("goal_lat, goal_lon")
-        print(goal_lat, goal_lon)
-        # print(goal_gps[0])
-        # print(goal_gps[1])
-        goal_node = self.add_node(id="Goal", lat=goal_lat, lon=goal_lon, alt=28.9, graph=self.graph, nodes=self.nodes) # Temp val for altitude
-
-        path = self.a_star(self.graph, self.nodes, start_node, goal_node)
-        print("path output")
-        print(path)
-
-        if path:
-            self.publish_path(path)
 
     def heuristic(self, node, goal):
         """Heuristic function for A* (Euclidean distance)."""
@@ -303,8 +275,8 @@ class PathPlanner:
         node_id = id
         nearest_node_id, distance = self.find_nearest_node(lat, lon, nodes)
 
-        # GPS → UTM 변환
-        utm_x, utm_y = transform(self.wgs84, self.utm, lon, lat)
+        # GPS → UTM 변환 (Transformer 사용)
+        utm_x, utm_y = self.transformer_to_utm.transform(lon, lat)
 
         # 상대 UTM 좌표 계산
         relative_x = utm_x - self.origin_utm[0]
@@ -321,15 +293,16 @@ class PathPlanner:
 
         return node_id
 
-    def reconstruct_path(self, came_from, current):
-        """Reconstruct the path from the came_from map."""
-        path = []
-        while current in came_from:
-            path.append(current)
-            current = came_from[current]
-        path.append(current)
-        path.reverse()
-        return path
+    def remove_node(self, node_id):
+        """Remove a node from the graph and nodes."""
+        if node_id in self.nodes:
+            del self.nodes[node_id]
+        if node_id in self.graph:
+            for neighbor, _ in self.graph[node_id]:
+                self.graph[neighbor] = [
+                    (n, w) for n, w in self.graph[neighbor] if n != node_id
+                ]
+            del self.graph[node_id]
 
     def publish_path(self, path):
         """Publish the planned path as a nav_msgs/Path message."""
@@ -344,25 +317,19 @@ class PathPlanner:
 
             node_info = self.nodes[node_id]
             gps_info = node_info['GpsInfo']
-            print(gps_info)
             lat, lon, alt = gps_info['Lat'], gps_info['Long'], gps_info['Alt']
 
-            # GPS 정보를 UTM 좌표로 변환
-            utm_x, utm_y = transform(self.wgs84, self.utm, lon, lat)
+            # GPS → UTM 변환 (Transformer 사용)
+            utm_x, utm_y = self.transformer_to_utm.transform(lon, lat)
 
             # 상대 UTM 좌표 계산
             relative_x = utm_x - self.origin_utm[0]
             relative_y = utm_y - self.origin_utm[1]
 
-            #relative_x = utm_x - self.current_position_utm[0]
-            #relative_y = utm_y - self.current_position_utm[1]
-
             # PoseStamped 메시지를 생성하여 추가
             pose_stamped = PoseStamped()
             pose_stamped.header.stamp = rospy.Time.now()
             pose_stamped.header.frame_id = 'waypoint'
-            #pose_stamped.pose.position.x = utm_x
-            #pose_stamped.pose.position.y = utm_y
             pose_stamped.pose.position.x = relative_x
             pose_stamped.pose.position.y = relative_y
             pose_stamped.pose.position.z = alt
