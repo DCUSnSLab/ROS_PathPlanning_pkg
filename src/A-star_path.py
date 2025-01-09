@@ -29,6 +29,11 @@ class PathPlanner:
 
         self.file_path = None
 
+        self.utm_zone = 52  # UTM zone 52N (example, change based on your region)
+
+        self.transformer_to_utm = Transformer.from_crs("epsg:4326", f"epsg:326{self.utm_zone}", always_xy=True)
+        self.transformer_to_gps = Transformer.from_crs(f"epsg:326{self.utm_zone}", "epsg:4326", always_xy=True)
+
         self.load_graph_data()
         self.current_position_gps = None
         self.current_position_utm = None
@@ -40,15 +45,10 @@ class PathPlanner:
 
         self.marker_array, self.ref_x, self.ref_y, self.ref_z = parse_json_and_visualize(self.file_path)
 
-        self.utm_zone = 52 # UTM zone 52N (example, change based on your region)
-
         self.wgs84 = Proj(init='epsg:4326')  # WGS84 coordinate system
         # self.wgs84 = CRS.from_epsg(4326)
         self.utm = Proj(zone=self.utm_zone, init='epsg:32633')
         # utm = Proj(proj="utm", datum="WGS84")  # Adjust zone as needed
-
-        self.transformer_to_utm = Transformer.from_crs("epsg:4326", f"epsg:326{self.utm_zone}", always_xy=True)
-        self.transformer_to_gps = Transformer.from_crs(f"epsg:326{self.utm_zone}", "epsg:4326", always_xy=True)
 
         rospy.Subscriber('/gps', GPSMessage, self.gps_callback)
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goal_callback)
@@ -88,6 +88,14 @@ class PathPlanner:
         if self.file_path:
             rospy.loginfo("Selected file: %s", self.file_path)
             self.call_service(self.file_path)
+
+            # Node의 첫 번째 좌표를 UTM으로 변환하여 origin 설정
+            if self.nodes:
+                first_node = list(self.nodes.values())[0]  # 첫 번째 노드 가져오기
+                lat, lon = first_node["GpsInfo"]["Lat"], first_node["GpsInfo"]["Long"]
+                utm_x, utm_y = self.transformer_to_utm.transform(lon, lat)
+                self.origin_utm = (utm_x, utm_y)  # 기준 UTM 좌표 설정
+                rospy.loginfo(f"Set origin UTM from first Node: {self.origin_utm}")
         else:
             rospy.logwarn("No file selected.")
 
@@ -112,10 +120,7 @@ class PathPlanner:
         utm_x, utm_y = self.transformer_to_utm.transform(gps_msg.longitude, gps_msg.latitude)
         self.current_position_utm = (utm_x, utm_y)
 
-        if self.origin_utm is None:
-            self.origin_utm = (utm_x, utm_y)
-            rospy.loginfo(f"Set origin UTM: {self.origin_utm}")
-
+        # origin_utm은 Node의 첫 번째 좌표로 설정되므로 여기서는 설정하지 않음
         relative_x = utm_x - self.origin_utm[0]
         relative_y = utm_y - self.origin_utm[1]
 
@@ -348,6 +353,9 @@ class PathPlanner:
             # 상대 UTM 좌표 계산
             relative_x = utm_x - self.origin_utm[0]
             relative_y = utm_y - self.origin_utm[1]
+
+            #relative_x = utm_x - self.current_position_utm[0]
+            #relative_y = utm_y - self.current_position_utm[1]
 
             # PoseStamped 메시지를 생성하여 추가
             pose_stamped = PoseStamped()
