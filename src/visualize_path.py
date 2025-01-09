@@ -53,11 +53,11 @@ def parse_json_and_visualize(file_path):
     marker_array = MarkerArray()
     node_positions = {}
 
-    # 첫 번째 노드의 UTM 좌표와 고도를 계산
+    # 첫 번째 노드의 UTM 좌표와 고도를 기준점으로 설정
     first_node = data["Node"][0]
-    lat, lon, alt = first_node["GpsInfo"]["Lat"], first_node["GpsInfo"]["Long"], first_node["GpsInfo"]["Alt"]
-    ref_x, ref_y = gps_to_utm(lat, lon)
-    ref_z = alt
+    ref_lat, ref_lon, ref_alt = first_node["GpsInfo"]["Lat"], first_node["GpsInfo"]["Long"], first_node["GpsInfo"]["Alt"]
+    ref_x, ref_y = gps_to_utm(ref_lat, ref_lon)
+    ref_z = ref_alt
 
     # Process Nodes
     for i, node in enumerate(data["Node"]):
@@ -65,7 +65,12 @@ def parse_json_and_visualize(file_path):
         gps_info = node["GpsInfo"]
         lat, lon, alt = gps_info["Lat"], gps_info["Long"], gps_info["Alt"]
         utm_x, utm_y = gps_to_utm(lat, lon)
-        position = [utm_x, utm_y, alt]
+
+        # 기준점을 기준으로 상대 좌표 계산
+        relative_x = utm_x - ref_x
+        relative_y = utm_y - ref_y
+        relative_z = alt
+        position = [relative_x, relative_y, relative_z]
         node_positions[node_id] = position
 
         cube_marker = create_marker(
@@ -96,15 +101,16 @@ def parse_json_and_visualize(file_path):
             line_marker.color.b = 0.0
             line_marker.color.a = 1.0
 
+            # 링크의 시작점과 끝점 좌표를 추가
             start_position = node_positions[from_node]
             end_position = node_positions[to_node]
-
             line_marker.points.append(Point(*start_position))
             line_marker.points.append(Point(*end_position))
 
             marker_array.markers.append(line_marker)
 
     return marker_array, ref_x, ref_y, ref_z
+
 
 def main():
     rospy.init_node('waypoint_visualization')
