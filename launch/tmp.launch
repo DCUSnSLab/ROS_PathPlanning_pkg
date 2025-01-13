@@ -1,11 +1,16 @@
-<?xml version="1.0"?>
 <launch>
-    <!-- visualize_path.py 실행 -->
-    <node name="visualize_path_node" pkg="path_planning" type="visualize_path.py" output="screen" />
+    <!-- MapServer 노드 실행 -->
+    <node pkg="path_planning" type="MapServer.py" name="map_server" output="screen">
+        <param name="map_file" value="$(find path_planning)/data/20250103_waypoint_graph.json" />
+    </node>
 
-    <!-- A-star_path.py 실행 -->
-    <node name="a_star_path_node" pkg="path_planning" type="A-star_path.py" output="screen" />
+    <!-- A-star_path 노드 실행 -->
+    <node pkg="path_planning" type="A-star_path.py" name="a_star_path" output="screen">
+        <param name="goal_tolerance" value="0.5" />
+    </node>
 
-
-    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find path_planning)/rviz/rviz_config.rviz" output="screen" />
+    <!-- new_purepursuit 노드 실행 -->
+    <node pkg="path_planning" type="new_purepursuit.py" name="pure_pursuit" output="screen">
+        <param name="lookahead_distance" value="5.0" />
+    </node>
 </launch>

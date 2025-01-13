@@ -1,10 +1,25 @@
+import tkinter as tk
+from tkinter import filedialog
 import rosbag
 import uuid
 import json
 import datetime
 import numpy as np
+import pyproj
 import matplotlib.pyplot as plt
 import networkx as nx
+
+def calculate_utm_zone(lon):
+    """
+    Calculate the UTM Zone for a given longitude.
+
+    Args:
+        lon (float): Longitude in degrees.
+
+    Returns:
+        int: UTM Zone number.
+    """
+    return int((lon + 180) // 6) + 1
 
 def extract_gps_from_bag(bag_file, gps_topic):
     """
@@ -50,6 +65,12 @@ def create_json_graph(gps_data):
             if distance < min_distance:
                 continue  # Skip this point if it's too close to the previous one
 
+        # Calculate UTM Zone and convert GPS to UTM
+        utm_zone = calculate_utm_zone(lon)
+        is_south = lat < 0  # Check if the location is in the southern hemisphere
+        utm_converter = pyproj.Proj(proj='utm', zone=utm_zone, ellps='WGS84', south=is_south)
+        easting, northing = utm_converter(lon, lat)
+
         node_id = f"N{node_index:04d}"  # Unique Node ID
         graph["Node"].append({
             "ID": node_id,
@@ -66,6 +87,11 @@ def create_json_graph(gps_data):
                 "Lat": lat,
                 "Long": lon,
                 "Alt": alt
+            },
+            "UtmInfo": {
+                "Easting": round(easting, 2),
+                "Northing": round(northing, 2),
+                "Zone": f"{utm_zone}{'S' if is_south else 'N'}"
             }
         })
 
@@ -102,7 +128,6 @@ def create_json_graph(gps_data):
 
     return graph
 
-
 def save_graph_to_json(graph, output_file):
     """
     Save the graph to a JSON file.
@@ -114,57 +139,31 @@ def save_graph_to_json(graph, output_file):
     with open(output_file, 'w') as f:
         json.dump(graph, f, indent=4, ensure_ascii=False)
 
-def visualize_graph(json_graph):
-    """
-    Visualize the graph using Matplotlib and NetworkX.
+def select_bag_file():
+    """Open a file dialog to select the bag file."""
+    return filedialog.askopenfilename(filetypes=[("ROS Bag Files", "*.bag")])
 
-    Args:
-        json_graph (dict): JSON graph structure with Nodes and Links.
-    """
-    # Create a NetworkX graph
-    G = nx.Graph()
+def save_json_file():
+    """Open a file dialog to select the save location for the JSON file."""
+    return filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON Files", "*.json")])
 
-    # Add nodes with positions
-    pos = {}
-    for node in json_graph["Node"]:
-        node_id = node["ID"]
-        lat = node["GpsInfo"]["Lat"]
-        lon = node["GpsInfo"]["Long"]
-        pos[node_id] = (lon, lat)  # Use longitude as x and latitude as y
-        G.add_node(node_id)
+def main():
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
 
-    # Add edges with weights
-    for link in json_graph["Link"]:
-        from_node = link["FromNodeID"]
-        to_node = link["ToNodeID"]
-        length = link["Length"]
-        G.add_edge(from_node, to_node, weight=length)
+    print("Select a ROS bag file...")
+    bag_file = select_bag_file()
+    if not bag_file:
+        print("No bag file selected. Exiting.")
+        return
 
-    # Draw the graph
-    plt.figure(figsize=(10, 8))
-    nx.draw(
-        G,
-        pos,
-        with_labels=True,
-        node_size=250,
-        font_size=5,
-        font_color='white',
-        node_color='blue',
-        # edge_color='gray'
-    )
-    edge_labels = nx.get_edge_attributes(G, 'weight')
-    #nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
-    #plt.title("Waypoint Graph Visualization")
-    #plt.xlabel("Longitude")
-    #plt.ylabel("Latitude")
-    plt.grid(False)
-    plt.show()
+    print("Select the output JSON file...")
+    output_json = save_json_file()
+    if not output_json:
+        print("No output file selected. Exiting.")
+        return
 
-if __name__ == "__main__":
-    # Example usage
-    bag_file = "../data/2025-01-03-18-20-30.bag"
-    gps_topic = "/gps"
-    output_json = "20250107_waypoint_graph_2.json"
+    gps_topic = "/gps"  # You can change this as needed
 
     print("Extracting GPS data from rosbag...")
     gps_data = extract_gps_from_bag(bag_file, gps_topic)
@@ -175,5 +174,7 @@ if __name__ == "__main__":
     print("Saving graph to JSON file...")
     save_graph_to_json(json_graph, output_json)
 
-    print("Visualizing graph...")
-    visualize_graph(json_graph)
+    print(f"Graph saved to {output_json}")
+
+if __name__ == "__main__":
+    main()

@@ -96,7 +96,7 @@ class PurePursuit:
         cmd = CtrlCmd()
         cmd.steering = steering_angle  # Normalized value (-0.5 ~ 0.5)
         print(steering_angle)
-        cmd.accel = 0.35  # Set a constant acceleration
+        cmd.accel = 0.75  # Set a constant acceleration
         self.cmd_pub.publish(cmd)
 
     def calculate_steering_angle(self, current_pose, lookahead_point):
