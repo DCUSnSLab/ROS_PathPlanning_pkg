@@ -3,7 +3,7 @@
 
 import rospy
 from tkinter import Tk, filedialog, messagebox
-from path_planning.srv import CreateGraph
+from path_planning.srv import CreateGraph, MapGraph
 from geometry_msgs.msg import PoseStamped, Point
 from nav_msgs.msg import Path
 from morai_msgs.msg import GPSMessage
@@ -24,6 +24,7 @@ class PathPlanner:
 
         self.graph = None  # Change to None to allow lazy initialization
         self.nodes = None
+        self.links = None
 
         self.file_path = None
 
@@ -145,13 +146,14 @@ class PathPlanner:
         rospy.wait_for_service('map_server')
         try:
             # Create a proxy for the service
-            service_proxy = rospy.ServiceProxy('map_server', CreateGraph)
+            service_proxy = rospy.ServiceProxy('map_server', MapGraph)
             # Call the service with the file path
             response = service_proxy(file_path)
             print(response)
             rospy.loginfo("Service call successful!")
-            self.graph = json.loads(response.graph_json)
-            self.nodes = json.loads(response.node_json)
+
+            self.nodes = response.map_graph.node_array
+            self.links = response.map_graph.link_array
         except rospy.ServiceException as e:
             rospy.logerr("Service call failed: %s", e)
             messagebox.showerror("Service Error", f"Service call failed: {e}")

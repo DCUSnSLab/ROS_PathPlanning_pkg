@@ -74,9 +74,9 @@ def create_json_graph(gps_data):
         node_id = f"N{node_index:04d}"  # Unique Node ID
         graph["Node"].append({
             "ID": node_id,
-            "AdminCode": None,
+            "AdminCode": "",
             "NodeType": 1,
-            "ITSNodeID": None,
+            "ITSNodeID": "",
             "Maker": "한국도로공사",
             "UpdateDate": current_date,
             "Version": "2021",

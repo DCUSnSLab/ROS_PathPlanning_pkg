@@ -6,11 +6,27 @@ class GpsInfo:
         self.long = long
         self.alt = alt
 
+    @staticmethod
+    def from_dict(data: Dict):
+        return GpsInfo(
+            lat=data["Lat"],
+            long=data["Long"],
+            alt=data["Alt"]
+        )
+
 class UtmInfo:
     def __init__(self, easting: float, northing: float, zone: str):
         self.easting = easting
         self.northing = northing
         self.zone = zone
+
+    @staticmethod
+    def from_dict(data: Dict):
+        return UtmInfo(
+            easting=data["Easting"],
+            northing=data["Northing"],
+            zone=data["Zone"]
+        )
 
 class Node:
     def __init__(
@@ -38,8 +54,10 @@ class Node:
         self.remark = remark
         self.hist_type = hist_type
         self.hist_remark = hist_remark
-        self.gps_info = GpsInfo(**gps_info)
-        self.utm_info = UtmInfo(**utm_info)
+        # self.gps_info = GpsInfo(**gps_info)
+        self.gps_info = GpsInfo.from_dict(gps_info)
+        # self.utm_info = UtmInfo(**utm_info)
+        self.utm_info = UtmInfo.from_dict(utm_info)
 
     @staticmethod
     def from_dict(data: Dict):
