@@ -15,6 +15,7 @@ from pyproj import Proj, CRS, transform, Transformer
 import tf
 
 from visualize_path import parse_json_and_visualize
+from path_planning.msg import Graph, Node, NodeArray, Link, LinkArray
 
 class PathPlanner:
     def __init__(self):
@@ -22,7 +23,6 @@ class PathPlanner:
 
         self.origin_utm = None
 
-        self.graph = None  # Change to None to allow lazy initialization
         self.nodes = None
         self.links = None
 
@@ -39,8 +39,6 @@ class PathPlanner:
         self.goal_position = None
 
         self.tf_broadcaster = tf.TransformBroadcaster()
-
-        self.northern_hemisphere = None # Northern and Southern Hemisphere distinction flag variable
 
         self.marker_array, self.ref_x, self.ref_y, self.ref_z = parse_json_and_visualize(self.file_path)
 
@@ -94,9 +92,7 @@ class PathPlanner:
             id="Start",
             lat=self.current_position_gps[0],
             lon=self.current_position_gps[1],
-            alt=self.current_position_gps[2],
-            graph=self.graph,
-            nodes=self.nodes
+            alt=self.current_position_gps[2]
         )
 
         # RViz Goal 좌표를 self.origin_utm 기준으로 보정
@@ -109,10 +105,16 @@ class PathPlanner:
 
         # 보정된 UTM → GPS 변환
         goal_lat, goal_lon = self.utm_to_gps(adjusted_goal_x, adjusted_goal_y, self.utm_zone, True)
-        goal_node = self.add_node("Goal", goal_lat, goal_lon, adjusted_goal_z, self.graph, self.nodes)
+
+        goal_node = self.add_node(
+            id="Goal",
+            lat=goal_lat,
+            lon=goal_lon,
+            alt=adjusted_goal_z
+        )
 
         # A* 경로 계산 및 Publish
-        path = self.a_star(self.graph, self.nodes, start_node, goal_node)
+        path = self.find_path(start_node, goal_node)
         if path:
             self.publish_path(path)
 
@@ -135,10 +137,10 @@ class PathPlanner:
 
         # Node의 첫 번째 좌표를 UTM으로 변환하여 origin 설정
         if self.nodes:
-            first_node = list(self.nodes.values())[0]
-            lat, lon = first_node["GpsInfo"]["Lat"], first_node["GpsInfo"]["Long"]
+            first_node = self.nodes.nodes[0]
+            lat, lon = first_node.Lat, first_node.Long
             utm_x, utm_y = self.transformer_to_utm.transform(lon, lat)
-            self.origin_utm = (utm_x, utm_y)
+            self.origin_utm = (utm_x, utm_y) # Coord for visualize markers 0, 0, 0 in RViz
             rospy.loginfo(f"Set origin UTM from first Node: {self.origin_utm}")
 
     def call_service(self, file_path):
@@ -149,14 +151,75 @@ class PathPlanner:
             service_proxy = rospy.ServiceProxy('map_server', MapGraph)
             # Call the service with the file path
             response = service_proxy(file_path)
-            print(response)
             rospy.loginfo("Service call successful!")
 
             self.nodes = response.map_graph.node_array
             self.links = response.map_graph.link_array
+
         except rospy.ServiceException as e:
             rospy.logerr("Service call failed: %s", e)
             messagebox.showerror("Service Error", f"Service call failed: {e}")
+
+    def heuristic(self, current_node, goal_node):
+        """Euclidean distance as heuristic"""
+        current = next((node for node in self.nodes.nodes if node.ID == current_node), None)
+        goal = next((node for node in self.nodes.nodes if node.ID == goal_node), None)
+        return math.sqrt((current.Lat - goal.Lat)**2 + (current.Long - goal.Long)**2)
+
+    def get_neighbors(self, node_id):
+        """Get neighbors of the current node from links"""
+        neighbors = []
+        for link in self.links.links:
+            if link.FromNodeID == node_id:
+                neighbors.append((link.ToNodeID, link.Length))
+            elif link.ToNodeID == node_id:
+                neighbors.append((link.FromNodeID, link.Length))
+        return neighbors
+
+    def find_path(self, start_id, goal_id):
+        """Find the shortest path using A*"""
+        open_set = set([start_id])
+        came_from = {}
+
+        g_score = {}
+        f_score = {}
+
+        for node in self.nodes.nodes:
+            g_score[node.ID] = float('inf')
+        g_score[start_id] = 0
+
+        for node in self.nodes.nodes:
+            f_score[node.ID] = float('inf')
+        f_score[start_id] = self.heuristic(start_id, goal_id)
+
+        while open_set:
+            current = min(open_set, key=lambda node: f_score[node])
+
+            if current == goal_id:
+                return self.reconstruct_path(came_from, current)
+
+            open_set.remove(current)
+
+            for neighbor, link_cost in self.get_neighbors(current):
+                tentative_g_score = g_score[current] + link_cost
+                if tentative_g_score < g_score[neighbor]:
+                    came_from[neighbor] = current
+                    g_score[neighbor] = tentative_g_score
+                    f_score[neighbor] = tentative_g_score + self.heuristic(neighbor, goal_id)
+                    if neighbor not in open_set:
+                        open_set.add(neighbor)
+
+        return None  # No path found
+
+    def reconstruct_path(self, came_from, current):
+        """Reconstruct the path from the came_from dictionary"""
+        path = []
+        while current in came_from:
+            path.append(current)
+            current = came_from[current]
+        path.append(current)
+        path.reverse()
+        return path
 
     def publish_utm_marker(self, utm_x, utm_y, altitude):
         """Publish the UTM position as a visualization marker."""
@@ -211,10 +274,6 @@ class PathPlanner:
 
         return latitude, longitude
 
-    def heuristic(self, node, goal):
-        """Heuristic function for A* (Euclidean distance)."""
-        return math.sqrt((node[0] - goal[0]) ** 2 + (node[1] - goal[1]) ** 2)
-
     def haversine(self, lat1, lon1, lat2, lon2):
         R = 6371  # Earth's radius in km
         phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -223,60 +282,26 @@ class PathPlanner:
         a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
         return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-    def a_star(self, graph, nodes, start, goal):
-        def heuristic(node_id):
-            lat1, lon1 = nodes[node_id]['GpsInfo']['Lat'], nodes[node_id]['GpsInfo']['Long']
-            lat2, lon2 = nodes[goal]['GpsInfo']['Lat'], nodes[goal]['GpsInfo']['Long']
-            return self.haversine(lat1, lon1, lat2, lon2)
-
-        open_set = []
-        heapq.heappush(open_set, (0, start))
-
-        came_from = {}
-        g_score = {node: float('inf') for node in graph}
-        g_score[start] = 0
-        f_score = {node: float('inf') for node in graph}
-        f_score[start] = heuristic(start)
-
-        while open_set:
-            _, current = heapq.heappop(open_set)
-
-            if current == goal:
-                path = []
-                while current in came_from:
-                    path.append(current)
-                    current = came_from[current]
-                path.append(start)
-                return path[::-1]
-
-            for neighbor, weight in graph[current]:
-                tentative_g_score = g_score[current] + weight
-                if tentative_g_score < g_score[neighbor]:
-                    came_from[neighbor] = current
-                    g_score[neighbor] = tentative_g_score
-                    f_score[neighbor] = tentative_g_score + heuristic(neighbor)
-                    heapq.heappush(open_set, (f_score[neighbor], neighbor))
-
-        return None  # Path not found
-
-    def find_nearest_node(self, lat, lon, nodes):
+    def find_nearest_node(self, lat, lon):
         min_distance = float('inf')
         nearest_node_id = None
 
-        for node_id, node in nodes.items():
-            node_lat = node['GpsInfo']['Lat']
-            node_lon = node['GpsInfo']['Long']
+        for node in self.nodes.nodes:
+            node_lat = node.Lat
+            node_lon = node.Long
             distance = self.haversine(lat, lon, node_lat, node_lon)
 
             if distance < min_distance:
                 min_distance = distance
-                nearest_node_id = node_id
+                nearest_node_id = node.ID
 
         return nearest_node_id, min_distance
 
-    def add_node(self, id, lat, lon, alt, graph, nodes):
-        node_id = id
-        nearest_node_id, distance = self.find_nearest_node(lat, lon, nodes)
+    def calculate_utm_zone(self, lon):
+        return int((lon + 180) // 6) + 1
+
+    def add_node(self, id, lat, lon, alt):
+        nearest_node_id, distance = self.find_nearest_node(lat, lon)
 
         # GPS → UTM 변환 (Transformer 사용)
         utm_x, utm_y = self.transformer_to_utm.transform(lon, lat)
@@ -285,42 +310,74 @@ class PathPlanner:
         relative_x = utm_x - self.origin_utm[0]
         relative_y = utm_y - self.origin_utm[1]
 
-        nodes[node_id] = {
-            "ID": node_id,
-            "GpsInfo": {"Lat": lat, "Long": lon, "Alt": alt},
-            "UTM": {"X": relative_x, "Y": relative_y},
-        }
+        node = Node()
+        node.ID = id
+        node.AdminCode = ""
+        node.NodeType = ""
+        node.ITSNodeID = ""
+        node.Maker =""
+        node.UpdateDate = ""
+        node.Version = ""
+        node.Remark = ""
+        node.HistType = ""
+        node.HistRemark = ""
+        node.Lat = lat
+        node.Long = lon
+        node.Alt = alt
+        node.Easting = utm_x
+        node.Northing = utm_y
+        node.Zone = self.calculate_utm_zone(lon)
 
-        graph[node_id] = [(nearest_node_id, distance)]
-        graph[nearest_node_id].append((node_id, distance))
+        self.nodes.nodes.append(node)
 
-        return node_id
+        link = Link()
+        link.ID = str(id + "_link")
+        link.AdminCode = ""
+        link.RoadRank = ""
+        link.RoadType = ""
+        link.RoadNo = ""
+        link.LinkType = ""
+        link.LaneNo = ""
+        link.R_LinkID = ""
+        link.L_LinkID = ""
+        link.FromNodeID = id
+        link.ToNodeID = nearest_node_id
+        link.SectionID = ""
+        link.Length = 0
+        link.ITSLinkID = ""
+        link.Maker = ""
+        link.UpdateDate = ""
+        link.Version = ""
+        link.Remark = ""
+        link.HistType = ""
+        link.HistRemark = ""
+
+        self.links.links.append(link)
+
+        return id
 
     def remove_node(self, node_id):
         """Remove a node from the graph and nodes."""
-        if node_id in self.nodes:
-            del self.nodes[node_id]
-        if node_id in self.graph:
-            for neighbor, _ in self.graph[node_id]:
-                self.graph[neighbor] = [
-                    (n, w) for n, w in self.graph[neighbor] if n != node_id
-                ]
-            del self.graph[node_id]
+        for idx, node in enumerate(self.nodes.nodes):
+            if node.ID == node_id:
+                rospy.logwarn(f"Node ID {node_id} Deleted.")
+                del self.nodes.nodes[idx]
 
     def publish_path(self, path):
+
+        print(path)
         """Publish the planned path as a nav_msgs/Path message."""
         path_msg = Path()
         path_msg.header.stamp = rospy.Time.now()
         path_msg.header.frame_id = 'waypoint'
 
         for node_id in path:
-            if node_id not in self.nodes:
-                rospy.logwarn(f"Node ID {node_id} not found in self.nodes.")
-                continue
 
-            node_info = self.nodes[node_id]
-            gps_info = node_info['GpsInfo']
-            lat, lon, alt = gps_info['Lat'], gps_info['Long'], gps_info['Alt']
+            # node_info = self.nodes[node_id]
+            node_info = next((node for node in self.nodes.nodes if node.ID == node_id), None)
+            # gps_info = node_info['GpsInfo']
+            # lat, lon, alt = gps_info['Lat'], gps_info['Long'], gps_info['Alt']
+            lat, lon, alt = node_info.Lat, node_info.Long, node_info.Alt
 
             # GPS → UTM 변환 (Transformer 사용)
             utm_x, utm_y = self.transformer_to_utm.transform(lon, lat)
@@ -345,5 +402,6 @@ class PathPlanner:
 
 
 if __name__ == '__main__':
-    planner = PathPlanner()
-    rospy.spin()
+
+    # Create AStarPathfinding instance
+    pathfinder = PathPlanner()
