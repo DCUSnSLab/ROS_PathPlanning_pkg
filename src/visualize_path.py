@@ -93,9 +93,10 @@ def parse_json_and_visualize(file_path):
             line_marker.header.stamp = rospy.Time.now()
             line_marker.ns = "waypoint_visualization"
             line_marker.id = len(data["Node"]) + j
-            line_marker.type = Marker.LINE_STRIP
+            line_marker.type = Marker.ARROW
             line_marker.action = Marker.ADD
             line_marker.scale.x = 0.1
+            line_marker.scale.y = 1.0
             line_marker.color.r = 1.0
             line_marker.color.g = 0.0
             line_marker.color.b = 0.0
