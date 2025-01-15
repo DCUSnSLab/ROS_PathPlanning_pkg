@@ -2,7 +2,9 @@
 import rospy
 import math
 import numpy as np
-from geometry_msgs.msg import Pose, PoseStamped, Quaternion
+import tf2_ros
+from tf.transformations import euler_from_quaternion
+from geometry_msgs.msg import Pose, PoseStamped, Quaternion, TransformStamped, Point
 from nav_msgs.msg import Path
 from morai_msgs.msg import EgoVehicleStatus, CtrlCmd
 from visualization_msgs.msg import Marker
@@ -10,32 +12,36 @@ from visualization_msgs.msg import Marker
 class PurePursuit:
     def __init__(self):
         rospy.init_node('pure_pursuit', anonymous=True)
-        self.morai_pose_sub = rospy.Subscriber('/Ego_topic', EgoVehicleStatus, self.heading_callback)
-        self.pose_sub = rospy.Subscriber('/ego_vehicle', Marker, self.pose_callback)
-        self.path_sub = rospy.Subscriber('/planned_path', Path, self.path_callback)
+        self.path = None
+
         self.cmd_pub = rospy.Publisher('/ctrl_cmd', CtrlCmd, queue_size=1)
         self.marker_pub = rospy.Publisher('/lookahead_marker', Marker, queue_size=10)
 
-        self.lookahead_distance = rospy.get_param('~lookahead_distance', 5.0)
-        self.path = []
         self.current_pose = PoseStamped()
         self.current_heading = None
+
+        self.morai_pose_sub = rospy.Subscriber('/Ego_topic', EgoVehicleStatus, self.heading_callback, queue_size=1)
+        # self.pose_sub = rospy.Subscriber('/ego_vehicle', Marker, self.pose_callback, queue_size=1)
+        self.utm_sub = rospy.Subscriber('/ego_utm', Point, self.pose_callback, queue_size=1)
+        # self.path_sub = rospy.Subscriber('/planned_path', Path, self.path_callback)
+
+        self.lookahead_distance = rospy.get_param('~lookahead_distance', 2.5)
+
+        self.path_receiver()
+    def path_receiver(self):
+        topic = "/planned_path"
+        rospy.loginfo(f"Waiting for a message on {topic}...")
+        msg = rospy.wait_for_message(topic, Path)  # 토픽 타입에 맞게 변경
+        # rospy.loginfo(f"Received message: {msg.data}")
+        self.path = [pose.pose.position for pose in msg.poses]
 
     def path_callback(self, msg):
         """Update the planned path."""
         self.path = [pose.pose.position for pose in msg.poses]
 
     def pose_callback(self, msg):
-        # self.current_pose = PoseStamped()
-        # self.current_pose.header.frame_id = "waypoint"
-        # self.current_pose.header.stamp = rospy.Time.now()
-        # pose = Pose()
-        # pose.position.x = msg.pose.position.x
-        # pose.position.y = msg.pose.position.y
-        # self.current_pose.pose = pose
-
-        self.current_pose.pose.position.x = msg.pose.position.x
-        self.current_pose.pose.position.y = msg.pose.position.y
+        self.current_pose.pose.position.x = msg.x
+        self.current_pose.pose.position.y = msg.y
 
     def heading_callback(self, msg):
         """Update the current heading and trigger control calculation."""
@@ -53,19 +59,19 @@ class PurePursuit:
         marker.action = Marker.ADD
         marker.pose.position.x = lookahead_point.x
         marker.pose.position.y = lookahead_point.y
-        marker.pose.position.z = 0.0
-        marker.scale.x = 0.5
-        marker.scale.y = 0.5
-        marker.scale.z = 0.5
+        marker.pose.position.z = 35 # temp val
+        marker.scale.x = 1.5
+        marker.scale.y = 1.5
+        marker.scale.z = 1.5
         marker.color.r = 1.0
         marker.color.g = 0.0
-        marker.color.b = 0.0
+        marker.color.b = 1.0
         marker.color.a = 1.0
         self.marker_pub.publish(marker)
 
     def calculate_control(self):
-        if not self.path:
-            rospy.logwarn("Path is empty. Stopping the vehicle.")
+        if self.path == None:
+            # rospy.logwarn("Path is empty. Stopping the vehicle.")
             cmd = CtrlCmd()
             cmd.accel = 0.0
             cmd.steering = 0.0

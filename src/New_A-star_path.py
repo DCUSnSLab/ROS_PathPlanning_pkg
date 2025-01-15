@@ -4,7 +4,7 @@
 import rospy
 from tkinter import Tk, filedialog, messagebox
 from path_planning.srv import CreateGraph, MapGraph
-from geometry_msgs.msg import PoseStamped, Point
+from geometry_msgs.msg import Pose, PoseStamped, Point
 from nav_msgs.msg import Path
 from morai_msgs.msg import GPSMessage
 import math
@@ -51,6 +51,7 @@ class PathPlanner:
 
         self.path_pub = rospy.Publisher('/planned_path', Path, queue_size=10)
         self.utm_marker_pub = rospy.Publisher('/ego_vehicle', Marker, queue_size=10)
+        self.utm_coord = rospy.Publisher('/ego_utm', Point, queue_size=10)
 
         self.marker_pub = rospy.Publisher('visualization_marker_array', MarkerArray, queue_size=10, latch=True)
 
@@ -82,6 +83,11 @@ class PathPlanner:
 
         # self.publish_utm_marker(utm_x, utm_y, gps_msg.altitude)
         self.publish_utm_marker(relative_x, relative_y, gps_msg.latitude, gps_msg.longitude, gps_msg.altitude) # Display with relative coord
+
+        utm_coord = Point()
+        utm_coord.x = relative_x
+        utm_coord.y = relative_y
+        self.utm_coord.publish(utm_coord)
 
     def goal_callback(self, goal_msg):
         # Start 및 Goal 노드 삭제

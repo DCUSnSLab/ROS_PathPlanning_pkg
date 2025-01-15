@@ -1,123 +1,50 @@
-import json
-import math
-import heapq
+#!/usr/bin/env python
+
+import rospy
+import tf2_ros
+from geometry_msgs.msg import TransformStamped
+from tf.transformations import euler_from_quaternion
 
 
-def load_graph(file_path):
-    with open(file_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+def check_tf_transform(parent_frame, child_frame):
+    rospy.init_node('tf_transform_checker')
 
-    graph = {}
-    nodes = {node['ID']: node for node in data['Node']}
+    # TF Buffer와 Listener 설정
+    tf_buffer = tf2_ros.Buffer()
+    tf_listener = tf2_ros.TransformListener(tf_buffer)
 
-    for link in data['Link']:
-        from_node = link['FromNodeID']
-        to_node = link['ToNodeID']
-        length = link['Length']
+    rate = rospy.Rate(10)  # 10 Hz
 
-        if from_node not in graph:
-            graph[from_node] = []
-        if to_node not in graph:
-            graph[to_node] = []
+    while not rospy.is_shutdown():
+        try:
+            # 두 프레임 간 변환 가져오기
+            transform: TransformStamped = tf_buffer.lookup_transform(parent_frame, child_frame, rospy.Time(0))
 
-        graph[from_node].append((to_node, length))
-        graph[to_node].append((from_node, length))  # Assuming undirected graph
+            # 변환 정보 출력
+            translation = transform.transform.translation
+            rotation = transform.transform.rotation
 
-    return graph, nodes
+            rospy.loginfo(f"Transform from {parent_frame} to {child_frame}:")
+            rospy.loginfo(f"  Translation - x: {translation.x}, y: {translation.y}, z: {translation.z}")
 
+            # Quaternion → Euler 각도로 변환
+            quaternion = [rotation.x, rotation.y, rotation.z, rotation.w]
+            roll, pitch, yaw = euler_from_quaternion(quaternion)
+            rospy.loginfo(f"  Rotation (Euler) - roll: {roll}, pitch: {pitch}, yaw: {yaw}")
+        except tf2_ros.LookupException:
+            rospy.logwarn(f"Transform from {parent_frame} to {child_frame} not found.")
+        except tf2_ros.ConnectivityException:
+            rospy.logwarn("TF connectivity error.")
+        except tf2_ros.ExtrapolationException:
+            rospy.logwarn("TF extrapolation error.")
 
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371  # Earth's radius in km
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    delta_phi = math.radians(lat2 - lat1)
-    delta_lambda = math.radians(lon2 - lon1)
-    a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-
-def find_nearest_node(lat, lon, nodes):
-    min_distance = float('inf')
-    nearest_node_id = None
-
-    for node_id, node in nodes.items():
-        node_lat = node['GpsInfo']['Lat']
-        node_lon = node['GpsInfo']['Long']
-        distance = haversine(lat, lon, node_lat, node_lon)
-
-        if distance < min_distance:
-            min_distance = distance
-            nearest_node_id = node_id
-
-    return nearest_node_id, min_distance
+        rate.sleep()
 
 
-def add_virtual_node(lat, lon, graph, nodes):
-    virtual_node_id = "Virtual_Node"
-    nearest_node_id, distance = find_nearest_node(lat, lon, nodes)
-
-    nodes[virtual_node_id] = {
-        "ID": virtual_node_id,
-        "GpsInfo": {"Lat": lat, "Long": lon},
-    }
-
-    graph[virtual_node_id] = [(nearest_node_id, distance)]
-    graph[nearest_node_id].append((virtual_node_id, distance))
-
-    return virtual_node_id
-
-
-def a_star(graph, nodes, start, goal):
-    def heuristic(node_id):
-        lat1, lon1 = nodes[node_id]['GpsInfo']['Lat'], nodes[node_id]['GpsInfo']['Long']
-        lat2, lon2 = nodes[goal]['GpsInfo']['Lat'], nodes[goal]['GpsInfo']['Long']
-        return haversine(lat1, lon1, lat2, lon2)
-
-    open_set = []
-    heapq.heappush(open_set, (0, start))
-
-    came_from = {}
-    g_score = {node: float('inf') for node in graph}
-    g_score[start] = 0
-    f_score = {node: float('inf') for node in graph}
-    f_score[start] = heuristic(start)
-
-    while open_set:
-        _, current = heapq.heappop(open_set)
-
-        if current == goal:
-            path = []
-            while current in came_from:
-                path.append(current)
-                current = came_from[current]
-            path.append(start)
-            return path[::-1]
-
-        for neighbor, weight in graph[current]:
-            tentative_g_score = g_score[current] + weight
-            if tentative_g_score < g_score[neighbor]:
-                came_from[neighbor] = current
-                g_score[neighbor] = tentative_g_score
-                f_score[neighbor] = tentative_g_score + heuristic(neighbor)
-                heapq.heappush(open_set, (f_score[neighbor], neighbor))
-
-    return None  # Path not found
-
-
-if __name__ == "__main__":
-    file_path = "20250107_waypoint_graph_2.json"
-    graph, nodes = load_graph(file_path)
-
-    # Example: Input GPS coordinates
-    input_lat = 37.2395
-    input_lon = 126.7735
-
-    virtual_node_id = add_virtual_node(input_lat, input_lon, graph, nodes)
-
-    start_node = virtual_node_id  # Start from the virtual node
-    goal_node = "N0010"  # Example target node
-
-    path = a_star(graph, nodes, start_node, goal_node)
-    if path:
-        print(f"Path found: {' -> '.join(path)}")
-    else:
-        print("No path found.")
+if __name__ == '__main__':
+    try:
+        parent_frame = "waypoint"  # 부모 프레임
+        child_frame = "ego_vehicle"  # 자식 프레임
+        check_tf_transform(parent_frame, child_frame)
+    except rospy.ROSInterruptException:
+        pass
