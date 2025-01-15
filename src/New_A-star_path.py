@@ -16,6 +16,7 @@ import tf
 
 from visualize_path import parse_json_and_visualize
 from path_planning.msg import Graph, Node, NodeArray, Link, LinkArray
+from scipy.spatial.transform import Rotation as R
 
 class PathPlanner:
     def __init__(self):
@@ -80,19 +81,23 @@ class PathPlanner:
         relative_y = utm_y - self.origin_utm[1]
 
         # self.publish_utm_marker(utm_x, utm_y, gps_msg.altitude)
-        self.publish_utm_marker(relative_x, relative_y, gps_msg.altitude) # Display with relative coord
+        self.publish_utm_marker(relative_x, relative_y, gps_msg.latitude, gps_msg.longitude, gps_msg.altitude) # Display with relative coord
 
     def goal_callback(self, goal_msg):
         # Start 및 Goal 노드 삭제
         self.remove_node("Start")
         self.remove_node("Goal")
+        self.remove_link("Start")
+        self.remove_link("Goal")
+
 
         # Start 노드 생성
         start_node = self.add_node(
             id="Start",
             lat=self.current_position_gps[0],
             lon=self.current_position_gps[1],
-            alt=self.current_position_gps[2]
+            alt=self.current_position_gps[2],
+            direction=True
         )
 
         # RViz Goal 좌표를 self.origin_utm 기준으로 보정
@@ -110,7 +115,8 @@ class PathPlanner:
             id="Goal",
             lat=goal_lat,
             lon=goal_lon,
-            alt=adjusted_goal_z
+            alt=adjusted_goal_z,
+            direction=False
         )
 
         # A* 경로 계산 및 Publish
@@ -155,6 +161,8 @@ class PathPlanner:
 
             self.nodes = response.map_graph.node_array
             self.links = response.map_graph.link_array
+            print(self.nodes)
+            print(self.links)
 
         except rospy.ServiceException as e:
             rospy.logerr("Service call failed: %s", e)
@@ -183,6 +191,8 @@ class PathPlanner:
 
         g_score = {}
         f_score = {}
+
+        # Need to find nearst and possible nodes in start node
 
         for node in self.nodes.nodes:
             g_score[node.ID] = float('inf')
@@ -221,18 +231,18 @@ class PathPlanner:
         path.reverse()
         return path
 
-    def publish_utm_marker(self, utm_x, utm_y, altitude):
+    def publish_utm_marker(self, utm_x, utm_y, lat, long, alt):
         """Publish the UTM position as a visualization marker."""
         marker = Marker()
-        marker.header.frame_id = "waypoint"
+        marker.header.frame_id = "ego_vehicle"
         marker.header.stamp = rospy.Time.now()
         marker.ns = "utm_position"
         marker.id = 0
         marker.type = Marker.SPHERE
         marker.action = Marker.ADD
-        marker.pose.position.x = utm_x
-        marker.pose.position.y = utm_y
-        marker.pose.position.z = altitude
+        marker.pose.position.x = 0
+        marker.pose.position.y = 0
+        marker.pose.position.z = 0
         marker.pose.orientation.x = 0.0
         marker.pose.orientation.y = 0.0
         marker.pose.orientation.z = 0.0
@@ -244,6 +254,17 @@ class PathPlanner:
         marker.color.r = 0.0
         marker.color.g = 1.0
         marker.color.b = 0.0
+
+        self.tf_broadcaster.sendTransform(
+            # (self.ref_x, self.ref_y, self.ref_z),  # Translation (기준 Lat, Long, Alt에 해당하는 UTM 좌표)
+            (utm_x, utm_y, alt),
+            # (0, 0, 0),
+            # quaternion,  # Rotation (identity quaternion)
+            (0, 0, 0, 1),
+            rospy.Time.now(),
+            "ego_vehicle",
+            "waypoint"
+        )
 
         self.utm_marker_pub.publish(marker)
 
@@ -300,7 +321,7 @@ class PathPlanner:
     def calculate_utm_zone(self, lon):
         return int((lon + 180) // 6) + 1
 
-    def add_node(self, id, lat, lon, alt):
+    def add_node(self, id, lat, lon, alt, direction):
         nearest_node_id, distance = self.find_nearest_node(lat, lon)
 
         # GPS → UTM 변환 (Transformer 사용)
@@ -340,8 +361,8 @@ class PathPlanner:
         link.LaneNo = ""
         link.R_LinkID = ""
         link.L_LinkID = ""
-        link.FromNodeID = id
-        link.ToNodeID = nearest_node_id
+        link.FromNodeID = (id if direction else nearest_node_id)
+        link.ToNodeID = (nearest_node_id if direction else id)
         link.SectionID = ""
         link.Length = 0
         link.ITSLinkID = ""
@@ -362,6 +383,12 @@ class PathPlanner:
             if node.ID == node_id:
                 rospy.logwarn(f"Node ID {node_id} Deleted.")
                 del self.nodes.nodes[idx]
+
+    def remove_link(self, link_id):
+        for idx, link in enumerate(self.links.links):
+            if link.ID == str(link_id + "_link"):
+                rospy.logwarn(f"Link ID {link_id} Deleted.")
+                del self.links.links[idx]
 
     def publish_path(self, path):
 
@@ -402,6 +429,4 @@ class PathPlanner:
 
 
 if __name__ == '__main__':
-
-    # Create AStarPathfinding instance
     pathfinder = PathPlanner()
