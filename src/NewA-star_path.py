@@ -167,8 +167,6 @@ class PathPlanner:
 
             self.nodes = response.map_graph.node_array
             self.links = response.map_graph.link_array
-            print(self.nodes)
-            print(self.links)
 
         except rospy.ServiceException as e:
             rospy.logerr("Service call failed: %s", e)
@@ -186,8 +184,8 @@ class PathPlanner:
         for link in self.links.links:
             if link.FromNodeID == node_id:
                 neighbors.append((link.ToNodeID, link.Length))
-            elif link.ToNodeID == node_id:
-                neighbors.append((link.FromNodeID, link.Length))
+            #elif link.ToNodeID == node_id:
+            #    neighbors.append((link.FromNodeID, link.Length))
         return neighbors
 
     def find_path(self, start_id, goal_id):
@@ -210,8 +208,14 @@ class PathPlanner:
 
         while open_set:
             current = min(open_set, key=lambda node: f_score[node])
+            #print("current")
+            #print(current)
 
             if current == goal_id:
+                #print("came_from")
+                #print(came_from)
+                #print("current")
+                #print(current)
                 return self.reconstruct_path(came_from, current)
 
             open_set.remove(current)
@@ -224,6 +228,10 @@ class PathPlanner:
                     f_score[neighbor] = tentative_g_score + self.heuristic(neighbor, goal_id)
                     if neighbor not in open_set:
                         open_set.add(neighbor)
+
+        rospy.loginfo(f"No path found in current position")
+
+        # When cannot found available path
 
         return None  # No path found
 
@@ -397,8 +405,7 @@ class PathPlanner:
                 del self.links.links[idx]
 
     def publish_path(self, path):
-
-        print(path)
+        # print(path)
         """Publish the planned path as a nav_msgs/Path message."""
         path_msg = Path()
         path_msg.header.stamp = rospy.Time.now()

@@ -1,16 +1,13 @@
 import json
-import networkx as nx
 import tkinter as tk
-from tkinter import Canvas, filedialog, simpledialog
+from tkinter import Canvas, filedialog
 
 
-# Load the JSON file
 def load_json(file_path):
     with open(file_path, 'r') as f:
         return json.load(f)
 
 
-# Save the JSON file
 def save_json(data, file_path):
     with open(file_path, 'w') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
@@ -54,15 +51,15 @@ class NodeEditor:
         self.json_data = load_json(input_file)
         self.output_file = input_file
 
-        lats = [node["GpsInfo"]["Lat"] for node in self.json_data["Node"]]
-        longs = [node["GpsInfo"]["Long"] for node in self.json_data["Node"]]
+        eastings = [node["UtmInfo"]["Easting"] for node in self.json_data["Node"]]
+        northings = [node["UtmInfo"]["Northing"] for node in self.json_data["Node"]]
 
-        self.lat_min, self.lat_max = min(lats), max(lats)
-        self.long_min, self.long_max = min(longs), max(longs)
+        self.easting_min, self.easting_max = min(eastings), max(eastings)
+        self.northing_min, self.northing_max = min(northings), max(northings)
 
         self.nodes = {
             node["ID"]: self.normalize_coords(
-                node["GpsInfo"]["Long"], node["GpsInfo"]["Lat"]
+                node["UtmInfo"]["Easting"], node["UtmInfo"]["Northing"]
             )
             for node in self.json_data["Node"]
         }
@@ -79,17 +76,15 @@ class NodeEditor:
         save_json(self.json_data, self.output_file)
         print(f"Data saved to {self.output_file}")
 
-    def normalize_coords(self, longitude, latitude):
-        """Normalize GPS coordinates to fit canvas dimensions."""
-        x = (longitude - self.long_min) / (self.long_max - self.long_min) * 800 * self.scale_factor
-        y = (latitude - self.lat_min) / (self.lat_max - self.lat_min) * 600 * self.scale_factor
+    def normalize_coords(self, easting, northing):
+        x = (easting - self.easting_min) / (self.easting_max - self.easting_min) * 800 * self.scale_factor
+        y = (northing - self.northing_min) / (self.northing_max - self.northing_min) * 600 * self.scale_factor
         return x, y
 
     def denormalize_coords(self, x, y):
-        """Convert canvas coordinates back to GPS values."""
-        longitude = x / (800 * self.scale_factor) * (self.long_max - self.long_min) + self.long_min
-        latitude = y / (600 * self.scale_factor) * (self.lat_max - self.lat_min) + self.lat_min
-        return longitude, latitude
+        easting = x / (800 * self.scale_factor) * (self.easting_max - self.easting_min) + self.easting_min
+        northing = y / (600 * self.scale_factor) * (self.northing_max - self.northing_min) + self.northing_min
+        return easting, northing
 
     def draw_graph(self):
         self.canvas.delete("all")
@@ -126,9 +121,9 @@ class NodeEditor:
         if self.selected_node:
             for node in self.json_data["Node"]:
                 if node["ID"] == self.selected_node:
-                    longitude, latitude = self.denormalize_coords(event.x, event.y)
-                    node["GpsInfo"]["Long"] = longitude
-                    node["GpsInfo"]["Lat"] = latitude
+                    easting, northing = self.denormalize_coords(event.x, event.y)
+                    node["UtmInfo"]["Easting"] = easting
+                    node["UtmInfo"]["Northing"] = northing
                     break
             save_json(self.json_data, self.output_file)
             print(f"Node {self.selected_node} updated")
@@ -153,6 +148,6 @@ class NodeEditor:
 if __name__ == "__main__":
     print("Launching editor...")
     root = tk.Tk()
-    root.title("Node Editor")
+    root.title("Node Editor with UTM")
     editor = NodeEditor(root)
     root.mainloop()
