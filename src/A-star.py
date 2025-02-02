@@ -55,12 +55,13 @@ class PathPlanner:
 
         self.marker_pub = rospy.Publisher('visualization_marker_array', MarkerArray, queue_size=10, latch=True)
 
+        self.marker_pub.publish(self.marker_array)
         rate = rospy.Rate(1)  # 2 Hz
         while not rospy.is_shutdown():
             # TF 브로드캐스트 수행 (기준 좌표 사용)
             current_time = rospy.Time.now()
             self.tf_broadcaster.sendTransform(
-                # (self.ref_x, self.ref_y, self.ref_z),  # Translation (기준 Lat, Long, Alt에 해당하는 UTM 좌표)
+                #(self.ref_x, self.ref_y, self.ref_z),  # Translation (기준 Lat, Long, Alt에 해당하는 UTM 좌표)
                 (0, 0, 0),
                 (0, 0, 0, 1),  # Rotation (identity quaternion)
                 current_time,
@@ -68,7 +69,7 @@ class PathPlanner:
                 "map"
             )
             # 미리 생성한 MarkerArray를 Publish
-            self.marker_pub.publish(self.marker_array)
+
             rate.sleep()
 
     def gps_callback(self, gps_msg):
@@ -264,7 +265,7 @@ class PathPlanner:
         marker.scale.x = 4.0
         marker.scale.y = 4.0
         marker.scale.z = 4.0
-        marker.color.a = 1.0  # Alpha
+        marker.color.a = 0.6  # Alpha
         marker.color.r = 0.0
         marker.color.g = 1.0
         marker.color.b = 0.0
