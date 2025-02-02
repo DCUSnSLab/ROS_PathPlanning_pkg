@@ -6,13 +6,14 @@ from tkinter import Tk, filedialog, messagebox
 from path_planning.srv import CreateGraph, MapGraph
 from geometry_msgs.msg import Pose, PoseStamped, Point
 from nav_msgs.msg import Path
-from morai_msgs.msg import GPSMessage
+from morai_msgs.msg import GPSMessage, EgoVehicleStatus
 import math
 import heapq
 import json
 from visualization_msgs.msg import Marker, MarkerArray
 from pyproj import Proj, CRS, transform, Transformer
 import tf
+from tf.transformations import quaternion_from_euler
 
 from visualize_path import parse_json_and_visualize
 from path_planning.msg import Graph, Node, NodeArray, Link, LinkArray
@@ -39,6 +40,8 @@ class PathPlanner:
         self.current_position_utm = None
         self.goal_position = None
 
+        self.heading_quaternion = None
+
         self.tf_broadcaster = tf.TransformBroadcaster()
 
         self.marker_array, self.ref_x, self.ref_y, self.ref_z = parse_json_and_visualize(self.file_path)
@@ -47,6 +50,7 @@ class PathPlanner:
         self.utm = Proj(zone=self.utm_zone, init='epsg:32633')
 
         rospy.Subscriber('/gps', GPSMessage, self.gps_callback)
+        rospy.Subscriber('/Ego_topic', EgoVehicleStatus, self.ego_callback)
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goal_callback)
 
         self.path_pub = rospy.Publisher('/planned_path', Path, queue_size=10)
@@ -83,12 +87,15 @@ class PathPlanner:
         relative_y = utm_y - self.origin_utm[1]
 
         # self.publish_utm_marker(utm_x, utm_y, gps_msg.altitude)
-        self.publish_utm_marker(relative_x, relative_y, gps_msg.latitude, gps_msg.longitude, gps_msg.altitude) # Display with relative coord
+        self.publish_utm_marker(relative_x, relative_y, gps_msg.latitude, gps_msg.longitude, gps_msg.altitude, self.heading_quaternion) # Display with relative coord
 
         utm_coord = Point()
         utm_coord.x = relative_x
         utm_coord.y = relative_y
         self.utm_coord.publish(utm_coord)
+
+    def ego_callback(self, ego_msg):
+        self.heading_quaternion = self.angle_to_quaternion(ego_msg.heading)
 
     def goal_callback(self, goal_msg):
         # Start 및 Goal 노드 삭제
@@ -130,6 +137,21 @@ class PathPlanner:
         path = self.find_path(start_node, goal_node)
         if path:
             self.publish_path(path)
+
+    def angle_to_quaternion(self, yaw_deg):
+        """
+        -180 ~ 180 도 사이의 각도를 쿼터니언으로 변환합니다.
+
+        :param yaw_deg: Yaw 각도 (도 단위)
+        :return: 쿼터니언 (x, y, z, w)
+        """
+        # 각도를 라디안으로 변환
+        yaw_rad = math.radians(yaw_deg)
+
+        # 쿼터니언 계산 (Roll=0, Pitch=0, Yaw=yaw_rad)
+        quaternion = quaternion_from_euler(0, 0, yaw_rad)
+
+        return quaternion
 
     def load_graph_data(self):
         root = Tk()
@@ -246,7 +268,7 @@ class PathPlanner:
         path.reverse()
         return path
 
-    def publish_utm_marker(self, utm_x, utm_y, lat, long, alt):
+    def publish_utm_marker(self, utm_x, utm_y, lat, long, alt, heading):
         """Publish the UTM position as a visualization marker."""
         marker = Marker()
         marker.header.frame_id = "ego_vehicle"
@@ -274,8 +296,8 @@ class PathPlanner:
             # (self.ref_x, self.ref_y, self.ref_z),  # Translation (기준 Lat, Long, Alt에 해당하는 UTM 좌표)
             (utm_x, utm_y, alt),
             # (0, 0, 0),
-            # quaternion,  # Rotation (identity quaternion)
-            (0, 0, 0, 1),
+            self.heading_quaternion,  # Rotation (identity quaternion)
+            #(0, 0, 0, 1),
             rospy.Time.now(),
             "ego_vehicle",
             "waypoint"
