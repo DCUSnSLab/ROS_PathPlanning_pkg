@@ -13,9 +13,8 @@ Panels:
         - /TF1
         - /TF1/Frames1
         - /TF1/Tree1
-        - /TF1/Tree1/map1
-        - /TF1/Tree1/map1/base_link1
-        - /TF1/Tree1/map1/waypoint1
+        - /Marker3
+        - /Marker3/Status1
       Splitter Ratio: 0.5
     Tree Height: 1022
   - Class: rviz/Selection
@@ -35,7 +34,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: PointCloud2
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -137,7 +136,7 @@ Visualization Manager:
       Color: 255; 255; 255
       Color Transformer: Intensity
       Decay Time: 0
-      Enabled: false
+      Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Min Color: 0; 0; 0
@@ -146,13 +145,13 @@ Visualization Manager:
       Queue Size: 10
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.009999999776482582
+      Size (m): 0.05000000074505806
       Style: Flat Squares
       Topic: /velodyne_points
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
-      Value: false
+      Value: true
     - Class: rviz/TF
       Enabled: true
       Filter (blacklist): ""
@@ -160,17 +159,9 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: true
-        base_link:
-          Value: true
         ego_vehicle:
           Value: true
-        gps:
-          Value: true
-        imu:
-          Value: true
         map:
-          Value: true
-        velodyne:
           Value: true
         waypoint:
           Value: true
@@ -182,18 +173,19 @@ Visualization Manager:
       Show Names: true
       Tree:
         map:
-          base_link:
-            gps:
-              {}
-            imu:
-              {}
-            velodyne:
-              {}
           waypoint:
             ego_vehicle:
               {}
       Update Interval: 0
       Value: true
+    - Class: rviz/Marker
+      Enabled: false
+      Marker Topic: /visualization_marker
+      Name: Marker
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -222,7 +214,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/ThirdPersonFollower
-      Distance: 111.1146240234375
+      Distance: 117.8685302734375
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -230,17 +222,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -6.427931308746338
-        Y: -14.267457008361816
-        Z: 28.94019317626953
+        X: 0
+        Y: 0
+        Z: 0
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.3397964239120483
-      Target Frame: waypoint
-      Yaw: 4.010402202606201
+      Pitch: 0.7203980684280396
+      Target Frame: ego_vehicle
+      Yaw: 2.565398693084717
     Saved: ~
 Window Geometry:
   Displays:
@@ -258,5 +250,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1841
-  X: 2743
-  Y: 561
+  X: 3110
+  Y: 564

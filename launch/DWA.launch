@@ -9,6 +9,7 @@
         <param name="goal_tolerance" value="0.5" />
     </node>
 
+    <!-- new_purepursuit 노드 실행 -->
     <node pkg="path_planning" type="DWA.py" name="dwa" output="screen">
         <param name="lookahead_distance" value="5.0" />
     </node>
