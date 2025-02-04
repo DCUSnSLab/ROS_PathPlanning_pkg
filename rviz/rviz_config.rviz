@@ -6,7 +6,9 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
+        - /MarkerArray1
         - /Path1
+        - /Path1/Offset1
         - /Pose1
         - /Marker2
         - /PointCloud21
@@ -14,7 +16,6 @@ Panels:
         - /TF1/Frames1
         - /TF1/Tree1
         - /Marker3
-        - /Marker3/Status1
       Splitter Ratio: 0.5
     Tree Height: 1022
   - Class: rviz/Selection
@@ -84,8 +85,8 @@ Visualization Manager:
       Head Diameter: 0.30000001192092896
       Head Length: 0.20000000298023224
       Length: 0.30000001192092896
-      Line Style: Lines
-      Line Width: 0.029999999329447746
+      Line Style: Billboards
+      Line Width: 1
       Name: Path
       Offset:
         X: 0
@@ -121,7 +122,7 @@ Visualization Manager:
       Marker Topic: /lookahead_marker
       Name: Marker
       Namespaces:
-        {}
+        lookahead_point: true
       Queue Size: 100
       Value: true
     - Alpha: 1
@@ -145,7 +146,7 @@ Visualization Manager:
       Queue Size: 10
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.05000000074505806
+      Size (m): 0.09000000357627869
       Style: Flat Squares
       Topic: /velodyne_points
       Unreliable: false
@@ -179,13 +180,13 @@ Visualization Manager:
       Update Interval: 0
       Value: true
     - Class: rviz/Marker
-      Enabled: false
+      Enabled: true
       Marker Topic: /visualization_marker
       Name: Marker
       Namespaces:
         {}
       Queue Size: 100
-      Value: false
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -214,7 +215,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/ThirdPersonFollower
-      Distance: 117.8685302734375
+      Distance: 439.47711181640625
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -230,9 +231,9 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.7203980684280396
+      Pitch: 0.649796187877655
       Target Frame: ego_vehicle
-      Yaw: 2.565398693084717
+      Yaw: 4.390422344207764
     Saved: ~
 Window Geometry:
   Displays:
@@ -250,5 +251,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1841
-  X: 3110
-  Y: 564
+  X: 382
+  Y: 1329
