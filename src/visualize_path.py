@@ -16,9 +16,89 @@ def gps_to_utm(lat, lon):
     x, y = transform(wgs84, utm, lon, lat)  # Note: (lon, lat) order
     return x, y
 
+def parse_json_and_visualize(file_path):
+    '''
+    Create Path markerarray for visualize in RViz
+    '''
+    with open(file_path, 'r') as f:
+        data = json.load(f)
+
+    marker_array = MarkerArray()
+    node_positions = {}
+
+    # 첫 번째 노드의 UTM 좌표와 고도를 기준점으로 설정
+    first_node = data["Node"][0]
+    ref_lat, ref_lon, ref_alt = first_node["GpsInfo"]["Lat"], first_node["GpsInfo"]["Long"], first_node["GpsInfo"]["Alt"]
+    ref_x, ref_y = gps_to_utm(ref_lat, ref_lon)
+    ref_z = ref_alt
+
+    # Process Nodes
+    for i, node in enumerate(data["Node"]):
+        node_id = node["ID"]
+        gps_info = node["GpsInfo"]
+        lat, lon, alt = gps_info["Lat"], gps_info["Long"], gps_info["Alt"]
+        utm_x, utm_y = gps_to_utm(lat, lon)
+
+        # 기준점을 기준으로 상대 좌표 계산
+        relative_x = utm_x - ref_x
+        relative_y = utm_y - ref_y
+        relative_z = alt
+        position = [relative_x, relative_y, 0]
+        # position = [0, 0, 0]
+        # position = [ref_x, ref_y, ref_z]
+        # position = [utm_x, utm_y, alt]
+        # print("rel")
+        # print(relative_x, relative_y, relative_z)
+        # print("ref")
+        # print(ref_x, ref_y, ref_z)
+        # print("utm")
+        # print(utm_x, utm_y)
+        node_positions[node_id] = position
+
+        cube_marker = create_marker(
+            marker_id=i,
+            marker_type=Marker.CUBE,
+            position=position,
+            scale=[0.5, 0.5, 0.5],
+            color=[0.0, 1.0, 0.0, 1.0]  # Green
+        )
+        marker_array.markers.append(cube_marker)
+
+    # Process Links
+    for j, link in enumerate(data.get("Link", [])):
+        from_node = link["FromNodeID"]
+        to_node = link["ToNodeID"]
+
+        if from_node in node_positions and to_node in node_positions:
+            line_marker = Marker()
+            line_marker.header.frame_id = "waypoint"
+            # line_marker.header.frame_id = "map"
+            line_marker.header.stamp = rospy.Time.now()
+            line_marker.ns = "waypoint_visualization"
+            line_marker.id = len(data["Node"]) + j
+            line_marker.type = Marker.ARROW
+            line_marker.action = Marker.ADD
+            line_marker.scale.x = 0.1
+            line_marker.scale.y = 1.0
+            line_marker.color.r = 1.0
+            line_marker.color.g = 0.0
+            line_marker.color.b = 0.0
+            line_marker.color.a = 1.0
+
+            # 링크의 시작점과 끝점 좌표를 추가
+            start_position = node_positions[from_node]
+            end_position = node_positions[to_node]
+            line_marker.points.append(Point(*start_position))
+            line_marker.points.append(Point(*end_position))
+
+            marker_array.markers.append(line_marker)
+
+    return marker_array, ref_x, ref_y, ref_z
+
 def create_marker(marker_id, marker_type, position, scale, color):
     marker = Marker()
     marker.header.frame_id = "waypoint"
+    # marker.header.frame_id = "map"
     marker.header.stamp = rospy.Time.now()  # Ensures consistent timestamp
     marker.ns = "waypoint_visualization"
     marker.id = marker_id
@@ -45,73 +125,6 @@ def create_marker(marker_id, marker_type, position, scale, color):
     marker.lifetime = rospy.Duration(0)
 
     return marker
-
-def parse_json_and_visualize(file_path):
-    with open(file_path, 'r') as f:
-        data = json.load(f)
-
-    marker_array = MarkerArray()
-    node_positions = {}
-
-    # 첫 번째 노드의 UTM 좌표와 고도를 기준점으로 설정
-    first_node = data["Node"][0]
-    ref_lat, ref_lon, ref_alt = first_node["GpsInfo"]["Lat"], first_node["GpsInfo"]["Long"], first_node["GpsInfo"]["Alt"]
-    ref_x, ref_y = gps_to_utm(ref_lat, ref_lon)
-    ref_z = ref_alt
-
-    # Process Nodes
-    for i, node in enumerate(data["Node"]):
-        node_id = node["ID"]
-        gps_info = node["GpsInfo"]
-        lat, lon, alt = gps_info["Lat"], gps_info["Long"], gps_info["Alt"]
-        utm_x, utm_y = gps_to_utm(lat, lon)
-
-        # 기준점을 기준으로 상대 좌표 계산
-        relative_x = utm_x - ref_x
-        relative_y = utm_y - ref_y
-        relative_z = alt
-        position = [relative_x, relative_y, relative_z]
-        node_positions[node_id] = position
-
-        cube_marker = create_marker(
-            marker_id=i,
-            marker_type=Marker.CUBE,
-            position=position,
-            scale=[0.5, 0.5, 0.5],
-            color=[0.0, 1.0, 0.0, 1.0]  # Green
-        )
-        marker_array.markers.append(cube_marker)
-
-    # Process Links
-    for j, link in enumerate(data.get("Link", [])):
-        from_node = link["FromNodeID"]
-        to_node = link["ToNodeID"]
-
-        if from_node in node_positions and to_node in node_positions:
-            line_marker = Marker()
-            line_marker.header.frame_id = "waypoint"
-            line_marker.header.stamp = rospy.Time.now()
-            line_marker.ns = "waypoint_visualization"
-            line_marker.id = len(data["Node"]) + j
-            line_marker.type = Marker.ARROW
-            line_marker.action = Marker.ADD
-            line_marker.scale.x = 0.1
-            line_marker.scale.y = 1.0
-            line_marker.color.r = 1.0
-            line_marker.color.g = 0.0
-            line_marker.color.b = 0.0
-            line_marker.color.a = 1.0
-
-            # 링크의 시작점과 끝점 좌표를 추가
-            start_position = node_positions[from_node]
-            end_position = node_positions[to_node]
-            line_marker.points.append(Point(*start_position))
-            line_marker.points.append(Point(*end_position))
-
-            marker_array.markers.append(line_marker)
-
-    return marker_array, ref_x, ref_y, ref_z
-
 
 def main():
     rospy.init_node('waypoint_visualization')

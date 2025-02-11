@@ -1,5 +1,8 @@
 <launch>
-<!--     <param name="/use_sim_time" value="true" /> -->
+    <param name="/use_sim_time" value="false" />
+
+    <node pkg="path_planning" type="tmp.py" name="tf_publisher" output="screen"/>
+
     <!-- MapServer 노드 실행 -->
     <node pkg="path_planning" type="MapServer.py" name="map_server" output="screen">
         <param name="map_file" value="$(find path_planning)/data/20250103_waypoint_graph.json" />

@@ -1,50 +1,106 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 import rospy
 import tf2_ros
+import tf_conversions
 from geometry_msgs.msg import TransformStamped
-from tf.transformations import euler_from_quaternion
+from sensor_msgs.msg import NavSatFix
+from morai_msgs.msg import GPSMessage, EgoVehicleStatus
+from tkinter import Tk, filedialog, messagebox
+from path_planning.srv import CreateGraph, MapGraph
+from geometry_msgs.msg import Pose, PoseStamped, Point
+from nav_msgs.msg import Path, Odometry
+from morai_msgs.msg import GPSMessage, EgoVehicleStatus
+import math
+import heapq
+import json
+from visualization_msgs.msg import Marker, MarkerArray
+from pyproj import Proj, CRS, transform, Transformer
+import tf
+from tf.transformations import quaternion_from_euler
+
+from visualize_path import parse_json_and_visualize
+from path_planning.msg import Graph, Node, NodeArray, Link, LinkArray
+from scipy.spatial.transform import Rotation as R
+
+import rospy
+import tf2_ros
+import tf_conversions
+from geometry_msgs.msg import TransformStamped
+from sensor_msgs.msg import NavSatFix
+import utm
 
 
-def check_tf_transform(parent_frame, child_frame):
-    rospy.init_node('tf_transform_checker')
+class TFBroadcaster:
+    def __init__(self):
+        rospy.init_node('tf_broadcaster', anonymous=True)
 
-    # TF Buffer와 Listener 설정
-    tf_buffer = tf2_ros.Buffer()
-    tf_listener = tf2_ros.TransformListener(tf_buffer)
+        self.map_gps_coordinates = (37.23923857150045, 126.7731611307903, 28.940864029884338) # Lat, Long, Alt
+        self.map_utm = None
 
-    rate = rospy.Rate(10)  # 10 Hz
+        self.br = tf2_ros.TransformBroadcaster()
+        self.static_br = tf2_ros.StaticTransformBroadcaster()
 
-    while not rospy.is_shutdown():
-        try:
-            # 두 프레임 간 변환 가져오기
-            transform: TransformStamped = tf_buffer.lookup_transform(parent_frame, child_frame, rospy.Time(0))
+        self.gps_sub = rospy.Subscriber("/gps", GPSMessage, self.gps_callback)
 
-            # 변환 정보 출력
-            translation = transform.transform.translation
-            rotation = transform.transform.rotation
+        self.static_transforms = [
+            self.create_static_tf("base_link", "velodyne", 0.5, 0.0, 1.2, 0, 0, 0),
+            self.create_static_tf("base_link", "gps", -0.2, 0.0, 1.5, 0, 0, 0),
+            self.create_static_tf("base_link", "imu", 0.0, 0.0, 1.0, 0, 0, 0)
+        ]
 
-            rospy.loginfo(f"Transform from {parent_frame} to {child_frame}:")
-            rospy.loginfo(f"  Translation - x: {translation.x}, y: {translation.y}, z: {translation.z}")
+    def create_static_tf(self, parent, child, x, y, z, roll, pitch, yaw):
+        t = TransformStamped()
+        t.header.stamp = rospy.Time.now()
+        t.header.frame_id = parent
+        t.child_frame_id = child
+        t.transform.translation.x = x
+        t.transform.translation.y = y
+        t.transform.translation.z = z
 
-            # Quaternion → Euler 각도로 변환
-            quaternion = [rotation.x, rotation.y, rotation.z, rotation.w]
-            roll, pitch, yaw = euler_from_quaternion(quaternion)
-            rospy.loginfo(f"  Rotation (Euler) - roll: {roll}, pitch: {pitch}, yaw: {yaw}")
-        except tf2_ros.LookupException:
-            rospy.logwarn(f"Transform from {parent_frame} to {child_frame} not found.")
-        except tf2_ros.ConnectivityException:
-            rospy.logwarn("TF connectivity error.")
-        except tf2_ros.ExtrapolationException:
-            rospy.logwarn("TF extrapolation error.")
+        q = tf_conversions.transformations.quaternion_from_euler(roll, pitch, yaw)
+        t.transform.rotation.x = q[0]
+        t.transform.rotation.y = q[1]
+        t.transform.rotation.z = q[2]
+        t.transform.rotation.w = q[3]
 
-        rate.sleep()
+        return t
+
+    def gps_callback(self, msg):
+        current_utm = utm.from_latlon(msg.latitude, msg.longitude)
+        if self.map_gps_coordinates is None:
+            self.map_utm = current_utm
+        else:
+            self.map_utm = utm.from_latlon(self.map_gps_coordinates[0], self.map_gps_coordinates[1])
+        self.gps_data = (current_utm[0] - self.map_utm[0], current_utm[1] - self.map_utm[1], msg.altitude)
+
+        self.static_br.sendTransform(self.static_transforms)
+        self.run()
+
+    def run(self):
+        if hasattr(self, 'gps_data'):
+            t = TransformStamped()
+            t.header.stamp = rospy.Time.now()
+            t.header.frame_id = "map"
+            t.child_frame_id = "base_link"
+
+            t.transform.translation.x = self.gps_data[0]  # UTM 변환 후 차이값 적용
+            t.transform.translation.y = self.gps_data[1]
+            t.transform.translation.z = self.gps_data[2]
+
+            q = tf_conversions.transformations.quaternion_from_euler(0, 0, 0)
+            t.transform.rotation.x = q[0]
+            t.transform.rotation.y = q[1]
+            t.transform.rotation.z = q[2]
+            t.transform.rotation.w = q[3]
+
+            self.br.sendTransform(t)
 
 
 if __name__ == '__main__':
     try:
-        parent_frame = "waypoint"  # 부모 프레임
-        child_frame = "ego_vehicle"  # 자식 프레임
-        check_tf_transform(parent_frame, child_frame)
+        TFBroadcaster()
+        rospy.spin()
     except rospy.ROSInterruptException:
         pass

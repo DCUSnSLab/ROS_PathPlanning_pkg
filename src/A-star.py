@@ -5,7 +5,7 @@ import rospy
 from tkinter import Tk, filedialog, messagebox
 from path_planning.srv import CreateGraph, MapGraph
 from geometry_msgs.msg import Pose, PoseStamped, Point
-from nav_msgs.msg import Path
+from nav_msgs.msg import Path, Odometry
 from morai_msgs.msg import GPSMessage, EgoVehicleStatus
 import math
 import heapq
@@ -24,6 +24,11 @@ class PathPlanner:
         rospy.init_node('path_planner')
 
         self.origin_utm = None
+        self.waypoint_relative_utm = None
+        self.waypoint_TF = False
+
+        self.map_gps_coordinates = (37.23923857150045, 126.7731611307903, 28.940864029884338)  # Lat, Long, Alt
+        self.map_utm = (302473.690, 4123735.933)
 
         self.nodes = None
         self.links = None
@@ -35,14 +40,14 @@ class PathPlanner:
         self.transformer_to_utm = Transformer.from_crs("epsg:4326", f"epsg:326{self.utm_zone}", always_xy=True)
         self.transformer_to_gps = Transformer.from_crs(f"epsg:326{self.utm_zone}", "epsg:4326", always_xy=True)
 
+        self.tf_broadcaster = tf.TransformBroadcaster()
+
         self.load_graph_data()
         self.current_position_gps = None
         self.current_position_utm = None
         self.goal_position = None
 
         self.heading_quaternion = None
-
-        self.tf_broadcaster = tf.TransformBroadcaster()
 
         self.marker_array, self.ref_x, self.ref_y, self.ref_z = parse_json_and_visualize(self.file_path)
 
@@ -53,6 +58,7 @@ class PathPlanner:
         rospy.Subscriber('/Ego_topic', EgoVehicleStatus, self.ego_callback)
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.goal_callback)
 
+        self.odom_pub = rospy.Publisher('/odom/coordinate', Odometry, queue_size=10)
         self.path_pub = rospy.Publisher('/planned_path', Path, queue_size=10)
         self.utm_marker_pub = rospy.Publisher('/ego_vehicle', Marker, queue_size=10)
         self.utm_coord = rospy.Publisher('/ego_utm', Point, queue_size=10)
@@ -60,39 +66,56 @@ class PathPlanner:
         self.marker_pub = rospy.Publisher('visualization_marker_array', MarkerArray, queue_size=10, latch=True)
 
         self.marker_pub.publish(self.marker_array)
-        rate = rospy.Rate(1)  # 2 Hz
-        while not rospy.is_shutdown():
-            # TF 브로드캐스트 수행 (기준 좌표 사용)
-            current_time = rospy.Time.now()
-            self.tf_broadcaster.sendTransform(
-                #(self.ref_x, self.ref_y, self.ref_z),  # Translation (기준 Lat, Long, Alt에 해당하는 UTM 좌표)
-                (0, 0, 0),
-                (0, 0, 0, 1),  # Rotation (identity quaternion)
-                current_time,
-                "waypoint",
-                "map"
-            )
-            # 미리 생성한 MarkerArray를 Publish
-
-            rate.sleep()
 
     def gps_callback(self, gps_msg):
         """Callback to update the current position with UTM coordinates."""
+        tf_broadcaster = tf.TransformBroadcaster()
         self.current_position_gps = (gps_msg.latitude, gps_msg.longitude, gps_msg.altitude)
         utm_x, utm_y = self.transformer_to_utm.transform(gps_msg.longitude, gps_msg.latitude)
         self.current_position_utm = (utm_x, utm_y)
 
         # origin_utm은 Node의 첫 번째 좌표로 설정되므로 여기서는 설정하지 않음
+
+        if self.waypoint_relative_utm == None:
+            self.waypoint_relative_utm = (utm_x - self.origin_utm[0], utm_y - self.origin_utm[1])
         relative_x = utm_x - self.origin_utm[0]
         relative_y = utm_y - self.origin_utm[1]
 
+        self.publish_odometry(self.waypoint_relative_utm[0], self.waypoint_relative_utm[1], gps_msg.altitude, self.heading_quaternion)
+
         # self.publish_utm_marker(utm_x, utm_y, gps_msg.altitude)
-        self.publish_utm_marker(relative_x, relative_y, gps_msg.latitude, gps_msg.longitude, gps_msg.altitude, self.heading_quaternion) # Display with relative coord
+        self.publish_utm_marker(self.waypoint_relative_utm[0], self.waypoint_relative_utm[1], gps_msg.latitude, gps_msg.longitude, gps_msg.altitude, self.heading_quaternion) # Display with relative coord
 
         utm_coord = Point()
         utm_coord.x = relative_x
         utm_coord.y = relative_y
         self.utm_coord.publish(utm_coord)
+
+        self.waypointTF()
+
+    def publish_odometry(self, x, y, z, quaternion):
+        """Odometry 메시지를 생성하고 발행"""
+        odom_msg = Odometry()
+        odom_msg.header.stamp = rospy.Time.now()
+        odom_msg.header.frame_id = "map"
+        odom_msg.child_frame_id = "base_link"
+
+        # 위치 정보 설정
+        odom_msg.pose.pose.position.x = x
+        odom_msg.pose.pose.position.y = y
+        odom_msg.pose.pose.position.z = z
+
+        # 방향 정보 설정 (쿼터니언)
+        if quaternion is not None and quaternion.size == 4:  # 길이 체크
+            odom_msg.pose.pose.orientation.x = quaternion[0]
+            odom_msg.pose.pose.orientation.y = quaternion[1]
+            odom_msg.pose.pose.orientation.z = quaternion[2]
+            odom_msg.pose.pose.orientation.w = quaternion[3]
+        else:
+            odom_msg.pose.pose.orientation.w = 1.0  # 기본 값
+
+        # 발행
+        self.odom_pub.publish(odom_msg)
 
     def ego_callback(self, ego_msg):
         self.heading_quaternion = self.angle_to_quaternion(ego_msg.heading)
@@ -114,6 +137,11 @@ class PathPlanner:
             direction=True
         )
 
+        rospy.loginfo(f"Start node")
+        rospy.loginfo(f"Lat : {self.current_position_gps[0]} ")
+        rospy.loginfo(f"Long : {self.current_position_gps[1]} ")
+        rospy.loginfo(f"Alt : {self.current_position_gps[2]} ")
+
         # RViz Goal 좌표를 self.origin_utm 기준으로 보정
         relative_goal_x = goal_msg.pose.position.x
         relative_goal_y = goal_msg.pose.position.y
@@ -132,6 +160,11 @@ class PathPlanner:
             alt=adjusted_goal_z,
             direction=False
         )
+
+        rospy.loginfo(f"Goal node")
+        rospy.loginfo(f"Lat : {goal_lat}")
+        rospy.loginfo(f"Long : {goal_lon}")
+        rospy.loginfo(f"Alt : {adjusted_goal_z}")
 
         # A* 경로 계산 및 Publish
         path = self.find_path(start_node, goal_node)
@@ -271,7 +304,8 @@ class PathPlanner:
     def publish_utm_marker(self, utm_x, utm_y, lat, long, alt, heading):
         """Publish the UTM position as a visualization marker."""
         marker = Marker()
-        marker.header.frame_id = "ego_vehicle"
+        # marker.header.frame_id = "ego_vehicle"
+        marker.header.frame_id = "base_link"
         marker.header.stamp = rospy.Time.now()
         marker.ns = "utm_position"
         marker.id = 0
@@ -280,6 +314,9 @@ class PathPlanner:
         marker.pose.position.x = 0
         marker.pose.position.y = 0
         marker.pose.position.z = 0
+        # marker.pose.position.x = utm_x
+        # marker.pose.position.y = utm_y
+        # marker.pose.position.z = 0
         marker.pose.orientation.x = 0.0
         marker.pose.orientation.y = 0.0
         marker.pose.orientation.z = 0.0
@@ -292,16 +329,16 @@ class PathPlanner:
         marker.color.g = 1.0
         marker.color.b = 0.0
 
-        self.tf_broadcaster.sendTransform(
-            # (self.ref_x, self.ref_y, self.ref_z),  # Translation (기준 Lat, Long, Alt에 해당하는 UTM 좌표)
-            (utm_x, utm_y, alt),
-            # (0, 0, 0),
-            self.heading_quaternion,  # Rotation (identity quaternion)
-            #(0, 0, 0, 1),
-            rospy.Time.now(),
-            "ego_vehicle",
-            "waypoint"
-        )
+        # self.tf_broadcaster.sendTransform(
+        #     # (self.ref_x, self.ref_y, self.ref_z),  # Translation (기준 Lat, Long, Alt에 해당하는 UTM 좌표)
+        #     (utm_x, utm_y, alt),
+        #     # (0, 0, 0),
+        #     self.heading_quaternion,  # Rotation (identity quaternion)
+        #     #(0, 0, 0, 1),
+        #     rospy.Time.now(),
+        #     "ego_vehicle",
+        #     "base_link"
+        # )
 
         self.utm_marker_pub.publish(marker)
 
@@ -428,11 +465,11 @@ class PathPlanner:
                 del self.links.links[idx]
 
     def publish_path(self, path):
-        # print(path)
         """Publish the planned path as a nav_msgs/Path message."""
         path_msg = Path()
         path_msg.header.stamp = rospy.Time.now()
         path_msg.header.frame_id = 'waypoint'
+        # path_msg.header.frame_id = 'map'
 
         for node_id in path:
 
@@ -455,7 +492,9 @@ class PathPlanner:
             pose_stamped.header.frame_id = 'waypoint'
             pose_stamped.pose.position.x = relative_x
             pose_stamped.pose.position.y = relative_y
-            pose_stamped.pose.position.z = alt
+            #pose_stamped.pose.position.x = utm_x
+            #pose_stamped.pose.position.y = utm_y
+            pose_stamped.pose.position.z = 0
 
             # Path 메시지에 추가
             path_msg.poses.append(pose_stamped)
@@ -463,6 +502,22 @@ class PathPlanner:
         # 경로를 Publish
         self.path_pub.publish(path_msg)
 
+    def waypointTF(self):
+        if self.waypoint_TF == False:
+            # TF 브로드캐스트 수행 (기준 좌표 사용)
+            current_time = rospy.Time.now()
+            self.tf_broadcaster.sendTransform(
+                (self.origin_utm[0] - self.map_utm[0], self.origin_utm[1] - self.map_utm[1], self.ref_z),  # Translation (기준 Lat, Long, Alt에 해당하는 UTM 좌표)
+                (0, 0, 0, 1),  # Rotation (identity quaternion)
+                current_time,
+                "waypoint",
+                "map"
+            )
+            self.waypoint_TF = True
 
 if __name__ == '__main__':
-    pathfinder = PathPlanner()
+    try:
+        pathfinder = PathPlanner()
+        rospy.spin()
+    except rospy.ROSInterruptException:
+        pass
