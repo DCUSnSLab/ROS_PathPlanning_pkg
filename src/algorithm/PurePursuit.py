@@ -52,7 +52,8 @@ class PurePursuit:
     def visualize_lookahead(self, lookahead_point):
         """Visualize the lookahead point in RViz."""
         marker = Marker()
-        marker.header.frame_id = "base_link"
+        # marker.header.frame_id = "base_link"
+        marker.header.frame_id = "map"
         marker.header.stamp = rospy.Time.now()
         marker.ns = "lookahead_point"
         marker.id = 0
@@ -60,6 +61,8 @@ class PurePursuit:
         marker.action = Marker.ADD
         marker.pose.position.x = lookahead_point.x - self.current_pose.pose.position.x
         marker.pose.position.y = lookahead_point.y - self.current_pose.pose.position.y
+        #marker.pose.position.x = lookahead_point.x
+        #marker.pose.position.y = lookahead_point.y
         marker.pose.position.z = 0 # temp val
         marker.scale.x = 1.5
         marker.scale.y = 1.5

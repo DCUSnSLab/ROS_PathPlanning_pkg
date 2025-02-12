@@ -42,14 +42,17 @@ class PathPlanner:
 
         self.tf_broadcaster = tf.TransformBroadcaster()
 
+        self.rviz_correction_val = (0, 0, 0)
+
         self.load_graph_data()
+
         self.current_position_gps = None
         self.current_position_utm = None
         self.goal_position = None
 
         self.heading_quaternion = None
 
-        self.marker_array, self.ref_x, self.ref_y, self.ref_z = parse_json_and_visualize(self.file_path)
+        self.marker_array, self.ref_x, self.ref_y, self.ref_z = parse_json_and_visualize(self.file_path, self.rviz_correction_val)
 
         self.wgs84 = Proj(init='epsg:4326')  # WGS84 coordinate system
         self.utm = Proj(zone=self.utm_zone, init='epsg:32633')
@@ -62,6 +65,8 @@ class PathPlanner:
         self.path_pub = rospy.Publisher('/planned_path', Path, queue_size=10)
         self.utm_marker_pub = rospy.Publisher('/ego_vehicle', Marker, queue_size=10)
         self.utm_coord = rospy.Publisher('/ego_utm', Point, queue_size=10)
+
+        self.debug_arrow = rospy.Publisher('/correction_pose', PoseStamped, queue_size=10)
 
         self.marker_pub = rospy.Publisher('visualization_marker_array', MarkerArray, queue_size=10, latch=True)
 
@@ -87,11 +92,11 @@ class PathPlanner:
         self.publish_utm_marker(self.waypoint_relative_utm[0], self.waypoint_relative_utm[1], gps_msg.latitude, gps_msg.longitude, gps_msg.altitude, self.heading_quaternion) # Display with relative coord
 
         utm_coord = Point()
-        utm_coord.x = relative_x
-        utm_coord.y = relative_y
+        # utm_coord.x = relative_x
+        # utm_coord.y = relative_y
+        utm_coord.x = relative_x + self.rviz_correction_val[0]
+        utm_coord.y = relative_y + self.rviz_correction_val[1]
         self.utm_coord.publish(utm_coord)
-
-        self.waypointTF()
 
     def publish_odometry(self, x, y, z, quaternion):
         """Odometry 메시지를 생성하고 발행"""
@@ -121,6 +126,20 @@ class PathPlanner:
         self.heading_quaternion = self.angle_to_quaternion(ego_msg.heading)
 
     def goal_callback(self, goal_msg):
+        corrected_pose = PoseStamped()
+        corrected_pose.header = goal_msg.header  # 기존 헤더 유지
+
+        # 위치(Position) 보정
+        corrected_pose.pose.position.x = goal_msg.pose.position.x + self.origin_utm[0] - self.rviz_correction_val[0]
+        corrected_pose.pose.position.y = goal_msg.pose.position.y + self.origin_utm[1] - self.rviz_correction_val[1]
+        corrected_pose.pose.position.z = goal_msg.pose.position.z + self.rviz_correction_val[2]
+
+        # 방향(Orientation)은 그대로 유지
+        corrected_pose.pose.orientation = goal_msg.pose.orientation
+
+        # 수정된 PoseStamped 발행
+        self.debug_arrow.publish(corrected_pose)
+
         # Start 및 Goal 노드 삭제
         self.remove_node("Start")
         self.remove_node("Goal")
@@ -146,9 +165,9 @@ class PathPlanner:
         relative_goal_x = goal_msg.pose.position.x
         relative_goal_y = goal_msg.pose.position.y
         relative_goal_z = goal_msg.pose.position.z
-        adjusted_goal_x = self.origin_utm[0] + relative_goal_x
-        adjusted_goal_y = self.origin_utm[1] + relative_goal_y
-        adjusted_goal_z = relative_goal_z
+        adjusted_goal_x = self.origin_utm[0] + relative_goal_x - self.rviz_correction_val[0]
+        adjusted_goal_y = self.origin_utm[1] + relative_goal_y - self.rviz_correction_val[1]
+        adjusted_goal_z = relative_goal_z + self.rviz_correction_val[2]
 
         # 보정된 UTM → GPS 변환
         goal_lat, goal_lon = self.utm_to_gps(adjusted_goal_x, adjusted_goal_y, self.utm_zone, True)
@@ -209,6 +228,8 @@ class PathPlanner:
             lat, lon = first_node.Lat, first_node.Long
             utm_x, utm_y = self.transformer_to_utm.transform(lon, lat)
             self.origin_utm = (utm_x, utm_y) # Coord for visualize markers 0, 0, 0 in RViz
+
+            self.rviz_correction_val = (self.origin_utm[0] - self.map_utm[0], self.origin_utm[1] - self.map_utm[1], first_node.Alt)
             rospy.loginfo(f"Set origin UTM from first Node: {self.origin_utm}")
 
     def call_service(self, file_path):
@@ -468,8 +489,8 @@ class PathPlanner:
         """Publish the planned path as a nav_msgs/Path message."""
         path_msg = Path()
         path_msg.header.stamp = rospy.Time.now()
-        path_msg.header.frame_id = 'waypoint'
-        # path_msg.header.frame_id = 'map'
+        #path_msg.header.frame_id = 'waypoint'
+        path_msg.header.frame_id = 'map'
 
         for node_id in path:
 
@@ -489,12 +510,12 @@ class PathPlanner:
             # PoseStamped 메시지를 생성하여 추가
             pose_stamped = PoseStamped()
             pose_stamped.header.stamp = rospy.Time.now()
-            pose_stamped.header.frame_id = 'waypoint'
-            pose_stamped.pose.position.x = relative_x
-            pose_stamped.pose.position.y = relative_y
+            pose_stamped.header.frame_id = 'map'
+            pose_stamped.pose.position.x = relative_x + self.rviz_correction_val[0]
+            pose_stamped.pose.position.y = relative_y + self.rviz_correction_val[1]
             #pose_stamped.pose.position.x = utm_x
             #pose_stamped.pose.position.y = utm_y
-            pose_stamped.pose.position.z = 0
+            pose_stamped.pose.position.z = self.rviz_correction_val[2]
 
             # Path 메시지에 추가
             path_msg.poses.append(pose_stamped)

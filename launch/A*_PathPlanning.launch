@@ -1,7 +1,7 @@
 <launch>
     <param name="/use_sim_time" value="false" />
 
-    <node pkg="path_planning" type="tmp.py" name="tf_publisher" output="screen"/>
+    <node pkg="path_planning" type="tmpOdom.py" name="tf_publisher" output="screen"/>
 
     <!-- MapServer 노드 실행 -->
     <node pkg="path_planning" type="MapServer.py" name="map_server" output="screen">

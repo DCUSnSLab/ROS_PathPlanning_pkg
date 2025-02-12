@@ -16,7 +16,7 @@ def gps_to_utm(lat, lon):
     x, y = transform(wgs84, utm, lon, lat)  # Note: (lon, lat) order
     return x, y
 
-def parse_json_and_visualize(file_path):
+def parse_json_and_visualize(file_path, correction_val):
     '''
     Create Path markerarray for visualize in RViz
     '''
@@ -43,16 +43,8 @@ def parse_json_and_visualize(file_path):
         relative_x = utm_x - ref_x
         relative_y = utm_y - ref_y
         relative_z = alt
-        position = [relative_x, relative_y, 0]
-        # position = [0, 0, 0]
-        # position = [ref_x, ref_y, ref_z]
-        # position = [utm_x, utm_y, alt]
-        # print("rel")
-        # print(relative_x, relative_y, relative_z)
-        # print("ref")
-        # print(ref_x, ref_y, ref_z)
-        # print("utm")
-        # print(utm_x, utm_y)
+        # position = [relative_x, relative_y, 0]
+        position = [relative_x + correction_val[0], relative_y + correction_val[1], correction_val[2]]
         node_positions[node_id] = position
 
         cube_marker = create_marker(
@@ -71,8 +63,8 @@ def parse_json_and_visualize(file_path):
 
         if from_node in node_positions and to_node in node_positions:
             line_marker = Marker()
-            line_marker.header.frame_id = "waypoint"
-            # line_marker.header.frame_id = "map"
+            #line_marker.header.frame_id = "waypoint"
+            line_marker.header.frame_id = "map"
             line_marker.header.stamp = rospy.Time.now()
             line_marker.ns = "waypoint_visualization"
             line_marker.id = len(data["Node"]) + j
@@ -97,8 +89,8 @@ def parse_json_and_visualize(file_path):
 
 def create_marker(marker_id, marker_type, position, scale, color):
     marker = Marker()
-    marker.header.frame_id = "waypoint"
-    # marker.header.frame_id = "map"
+    #marker.header.frame_id = "waypoint"
+    marker.header.frame_id = "map"
     marker.header.stamp = rospy.Time.now()  # Ensures consistent timestamp
     marker.ns = "waypoint_visualization"
     marker.id = marker_id
