@@ -24,6 +24,7 @@
 #include "path_planning/NodeArray.h"
 #include "path_planning/Link.h"
 #include "path_planning/LinkArray.h"
+#include "morai_msgs/GPSMessage.h"
 
 using std::string;
 
@@ -31,12 +32,20 @@ namespace graph_planner {
     class GraphPlanner : public nav_core::BaseGlobalPlanner {
     public:
         GraphPlanner();
+        ~GraphPlanner() {
+        };
         GraphPlanner(std::string name, costmap_2d::Costmap2DROS* costmap_ros);
 
         void initialize(std::string name, costmap_2d::Costmap2DROS* costmap_ros);
         bool makePlan(const geometry_msgs::PoseStamped& start,
             const geometry_msgs::PoseStamped& goal,
             std::vector<geometry_msgs::PoseStamped>& plan);
+        void gpsCallback(const morai_msgs::GPSMessage::ConstPtr& msg) {
+            ROS_INFO("Received GPS Data:");
+            ROS_INFO("Latitude: %f", msg->latitude);
+            ROS_INFO("Longitude: %f", msg->longitude);
+            ROS_INFO("Altitude: %f", msg->altitude);
+        }
 
         class Node {
         private:
@@ -48,6 +57,7 @@ namespace graph_planner {
                 //ROS_DEBUG("Node() Created");
                 //std::cout << "Node() Created" << std::endl;
             }
+            ~Node() {}
             Node(const string& id, double lat, double lon) : id(id), lat(lat), lon(lon) {}
             void addNeighbor(const string& neighbor_id, double weight) {
                 neighbors.emplace_back(neighbor_id, weight);
@@ -57,11 +67,18 @@ namespace graph_planner {
             string getID() const { return id; }
             double getLat() const { return lat; }
             double getLon() const { return lon; }
+
+
         };
         class Graph {
         private:
             std::unordered_map<string, Node> nodes;
         public:
+            Graph() {
+                ROS_DEBUG("Graph() Created");
+                std::cout << "Graph() Created" << std::endl;
+            }
+            ~Graph() {}
             void addNode(const string& id, double lat, double lon) {
                 nodes[id] = Node(id, lat, lon);
             }
@@ -139,6 +156,8 @@ namespace graph_planner {
     private:
         GraphPlanner::Graph graph_;
 
+        ros::Subscriber gps_sub;
+
         bool initialized_;
         bool arrived_;
 
@@ -153,6 +172,9 @@ namespace graph_planner {
 
         path_planning::NodeArray nodearr_;
         path_planning::NodeArray linkarr_;
+
+        ros::ServiceClient mapservice_;
+        ros::Subscriber gps_sub_;
 
         int utm_zone_;
     };
