@@ -53,7 +53,9 @@ def create_json_graph(gps_data):
     """
     current_date = datetime.datetime.now().strftime("%Y%m%d")
     graph = {"Node": [], "Link": []}
-    min_distance = 0.000045  # Approx. 5 meters in latitude/longitude degrees
+    #min_distance = 0.000045  # Approx. 5 meters in latitude/longitude degrees
+    min_distance = 0.00000898  # Approx. 1 meters in latitude/longitude degrees
+    #min_distance = 0.00000449  # Approx. 50 centimeters in latitude/longitude degrees
 
     prev_lat, prev_lon, prev_alt = None, None, None  # Initialize previous point
     node_index = 0  # Node index for unique IDs

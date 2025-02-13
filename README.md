@@ -1,11 +1,22 @@
 # ROS_PathPlanning_pkg
 Pathplanning on specified vertices
 
+## Build
+
+before catkin_make, must build custom msgs in path_planning pkg
+
+```bash
+catkin_make --only-pkg-with-deps path_planning
+
+source devel/setup.bash
+
+catkin_make
+```
+
 ## Run example(in morai sim)
 
 - roslaunch rosbridge_server rosbridge_websocket.launch
-- roslaunch path_planning A*asfasf
-- 
+- roslaunch path_planning A*
 
 ## Node and Topics
 

@@ -8,8 +8,6 @@ from geometry_msgs.msg import Pose, PoseStamped, Point
 from nav_msgs.msg import Path, Odometry
 from morai_msgs.msg import GPSMessage, EgoVehicleStatus
 import math
-import heapq
-import json
 from visualization_msgs.msg import Marker, MarkerArray
 from pyproj import Proj, CRS, transform, Transformer
 import tf
@@ -17,7 +15,6 @@ from tf.transformations import quaternion_from_euler
 
 from visualize_path import parse_json_and_visualize
 from path_planning.msg import Graph, Node, NodeArray, Link, LinkArray
-from scipy.spatial.transform import Rotation as R
 
 class PathPlanner:
     def __init__(self):
@@ -516,25 +513,13 @@ class PathPlanner:
             #pose_stamped.pose.position.x = utm_x
             #pose_stamped.pose.position.y = utm_y
             pose_stamped.pose.position.z = self.rviz_correction_val[2]
+            pose_stamped.pose.orientation.w = 1.0
 
             # Path 메시지에 추가
             path_msg.poses.append(pose_stamped)
 
         # 경로를 Publish
         self.path_pub.publish(path_msg)
-
-    def waypointTF(self):
-        if self.waypoint_TF == False:
-            # TF 브로드캐스트 수행 (기준 좌표 사용)
-            current_time = rospy.Time.now()
-            self.tf_broadcaster.sendTransform(
-                (self.origin_utm[0] - self.map_utm[0], self.origin_utm[1] - self.map_utm[1], self.ref_z),  # Translation (기준 Lat, Long, Alt에 해당하는 UTM 좌표)
-                (0, 0, 0, 1),  # Rotation (identity quaternion)
-                current_time,
-                "waypoint",
-                "map"
-            )
-            self.waypoint_TF = True
 
 if __name__ == '__main__':
     try:
