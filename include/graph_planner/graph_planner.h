@@ -17,6 +17,7 @@
 #include <vector>
 #include <tuple>
 #include <iostream>
+#include <cmath>
 
 #include "ros/ros.h"
 #include "path_planning/Node.h"
@@ -36,38 +37,110 @@ namespace graph_planner {
         bool makePlan(const geometry_msgs::PoseStamped& start,
             const geometry_msgs::PoseStamped& goal,
             std::vector<geometry_msgs::PoseStamped>& plan);
+
         class Node {
         private:
             string id;
             double lat, lon;
             std::vector<std::pair<string, double>> neighbors;
         public:
-            Node() {}
+            Node() {
+                //ROS_DEBUG("Node() Created");
+                //std::cout << "Node() Created" << std::endl;
+            }
             Node(const string& id, double lat, double lon) : id(id), lat(lat), lon(lon) {}
-            void addNeighbor(const string& neighbor_id, double weight);
-            const std::vector<std::pair<string, double>>& getNeighbors();
+            void addNeighbor(const string& neighbor_id, double weight) {
+                neighbors.emplace_back(neighbor_id, weight);
+            }
+            const std::vector<std::pair<string, double>>& getNeighbors() const { return neighbors; }
 
-            string getID();
-            double getLat();
-            double getLon();
+            string getID() const { return id; }
+            double getLat() const { return lat; }
+            double getLon() const { return lon; }
         };
         class Graph {
         private:
             std::unordered_map<string, Node> nodes;
         public:
-            void addNode(const string& id, double lat, double lon);
+            void addNode(const string& id, double lat, double lon) {
+                nodes[id] = Node(id, lat, lon);
+            }
 
-            // 링크 추가 (양방향)
-            void addLink(const string& from_id, const string& to_id, double weight);
-            // 노드 가져오기
-            const std::unordered_map<string, Node>& getNodes();
-            // 특정 노드 가져오기
-            const Node* getNode(const string& id);
+            void addLink(const string& from_id, const string& to_id, double weight) {
+                if (nodes.find(from_id) != nodes.end() && nodes.find(to_id) != nodes.end()) {
+                    nodes[from_id].addNeighbor(to_id, weight);
+                    nodes[to_id].addNeighbor(from_id, weight);
+                }
+            }
+
+            const std::unordered_map<string, Node>& getNodes() const { return nodes; }
+
+            const Node* getNode(const string& id) const {
+                auto it = nodes.find(id);
+                return (it != nodes.end()) ? &(it->second) : nullptr;
+            }
         };
+
+        double heuristic(const Node& a, const Node& b) {
+            return sqrt(pow(a.getLat() - b.getLat(), 2) + pow(a.getLon() - b.getLon(), 2));
+        }
+
+        std::vector<string> findPath(const Graph& graph, const string& start_id, const string& goal_id) {
+            struct AStarNode {
+                string id;
+                double g_cost, h_cost;
+
+                double f_cost() const { return g_cost + h_cost; }
+                bool operator>(const AStarNode &other) const { return f_cost() > other.f_cost(); }
+            };
+
+            std::priority_queue<AStarNode, std::vector<AStarNode>, std::greater<AStarNode>> pq;
+            std::unordered_map<string, double> g_cost;
+            std::unordered_map<string, string> parent;
+
+            const Node* start = graph.getNode(start_id);
+            const Node* goal = graph.getNode(goal_id);
+            if (!start || !goal) {
+                ROS_WARN("시작 또는 목표 노드가 그래프에 없습니다!");
+                return {};
+            }
+
+            g_cost[start_id] = 0;
+            pq.push({start_id, 0, heuristic(*start, *goal)});
+
+            while (!pq.empty()) {
+                AStarNode current = pq.top();
+                pq.pop();
+
+                if (current.id == goal_id) break;
+
+                const Node* currentNode = graph.getNode(current.id);
+                if (!currentNode) continue;
+
+                for (const auto &[neighbor_id, weight] : currentNode->getNeighbors()) {
+                    double new_g_cost = g_cost[current.id] + weight;
+                    if (g_cost.find(neighbor_id) == g_cost.end() || new_g_cost < g_cost[neighbor_id]) {
+                        g_cost[neighbor_id] = new_g_cost;
+                        parent[neighbor_id] = current.id;
+                        pq.push({neighbor_id, new_g_cost, heuristic(*graph.getNode(neighbor_id), *goal)});
+                    }
+                }
+            }
+
+            // 경로 재구성
+            std::vector<string> path;
+            for (string at = goal_id; parent.find(at) != parent.end(); at = parent[at])
+                path.push_back(at);
+
+            if (!path.empty()) path.push_back(start_id);
+            std::reverse(path.begin(), path.end());
+            return path;
+        }
     private:
         GraphPlanner::Graph graph_;
 
         bool initialized_;
+        bool arrived_;
 
         std::pair<double, double> origin_utm_;      // UTM 좌표 원점 (x, y)
         std::pair<double, double> waypoint_relative_utm_;  // 상대 UTM 좌표 (x, y)
