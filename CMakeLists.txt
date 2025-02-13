@@ -50,7 +50,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 ## Generate messages in the 'msg' folder
 add_message_files(
-    FILES Node.msg Link.msg NodeArray.msg LinkArray.msg Graph.msg
+    FILES Node.msg Link.msg NodeArray.msg LinkArray.msg GraphMsg.msg
 )
 
 ## Generate services in the 'srv' folder

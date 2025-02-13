@@ -11,6 +11,12 @@ PLUGINLIB_EXPORT_CLASS(graph_planner::GraphPlanner, nav_core::BaseGlobalPlanner)
 
 using namespace std;
 
+struct NodeData {
+    string id;
+    double lat, lon;
+    vector<pair<string, double>> neighbors;
+};
+
  //Default Constructor
 namespace graph_planner {
     GraphPlanner::GraphPlanner (){
@@ -22,6 +28,11 @@ namespace graph_planner {
         ROS_DEBUG("This is test msg for GraphPlanner");
         std::cout << "This is test output(GraphPlanner)" << std::endl;
         initialize(name, costmap_ros);
+
+        // GraphPlanner::Node node; // instance example
+    }
+    void GraphPlanner::Node::addNeighbor(const string& neighbor_id, double weight) {
+        neighbors.emplace_back(neighbor_id, weight);
     }
 
 
@@ -37,16 +48,12 @@ namespace graph_planner {
 
             map_srv.request.file_path = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
 
-            std::cout << "This is test output(init)" << std::endl;
-            ROS_DEBUG("This is test output(init)");
-
             if (client.call(map_srv)) {
-                std::cout << "This is test output(init)" << std::endl;
-                ROS_DEBUG("This is test output(init)");
                 ROS_INFO("success");
-                // std::cout << map_srv.response.map_graph.node_array.nodes[0].ID << endl;
-                graph_ = map_srv.response.map_graph;
+                std::cout << map_srv.response.map_graph.node_array.nodes[0].ID << endl; // cout for debug
+                //graph_ = map_srv.response.map_graph;
                 //ndarr_ = map_srv.response.map_graph.node_array;
+                graph_ = GraphPlanner::Graph();
             } else {
                 ROS_ERROR("error");
             }

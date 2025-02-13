@@ -8,7 +8,7 @@ from geometry_msgs.msg import Point
 from path_planning.srv import MapGraph
 from pyproj import Proj, transform
 # from Graph import Node, Link  # Import the custom Node and Link classes
-from path_planning.msg import Graph, Node, NodeArray, Link, LinkArray
+from path_planning.msg import GraphMsg, Node, NodeArray, Link, LinkArray
 
 def load_node_from_json(json_node):
     node = Node()
@@ -61,7 +61,7 @@ def load_graph_from_json(json_data):
     node_array.nodes = [load_node_from_json(node) for node in json_data["Node"]]
     link_array.links = [load_link_from_json(link) for link in json_data["Link"]]
 
-    graph = Graph()
+    graph = GraphMsg()
     graph.node_array = node_array
     graph.link_array = link_array
     return graph
