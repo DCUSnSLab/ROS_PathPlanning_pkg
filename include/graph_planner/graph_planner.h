@@ -136,7 +136,6 @@ namespace graph_planner {
         }
 
         std::string findClosestNode(double lat, double lon) {
-            std::cout << "findClosestNode called." << std::endl;
             std::string closest_node_id;
             double min_distance = std::numeric_limits<double>::max();
 
@@ -263,24 +262,22 @@ namespace graph_planner {
 
                 std::reverse(path.begin(), path.end());
 
-                std::cout << "before PG" << std::endl;
-
                 ros::Time current_time = ros::Time::now();
                 Node const *tmp;
 
                 for (size_t i = 0; i < path.size(); i++) {
                     tmp = graph_.getNode(path[i]);
 
-                    std::cout << tmp->getID() << " ";
-                    std::cout << tmp->getLat() << " ";
-                    std::cout << tmp->getLon() << std::endl;
-
                     geometry_msgs::PoseStamped pose;
                     pose.header.stamp = current_time;
                     pose.header.frame_id = "map";  // 좌표계 설정
 
-                    pose.pose.position.x = tmp->getEasting();  // x 좌표
-                    pose.pose.position.y = tmp->getNorthing(); // y 좌표
+//                    pose.pose.position.x = tmp->getEasting();  // x 좌표
+//                    pose.pose.position.y = tmp->getNorthing(); // y 좌표
+
+                    pose.pose.position.x = tmp->getEasting() - map_utm_.first;  // x 좌표
+                    pose.pose.position.y = tmp->getNorthing() - map_utm_.second; // y 좌표
+
                     pose.pose.position.z = 0.0;  // 기본값으로 z=0 설정
 
                     pose.pose.orientation.w = 1.0;  // 기본적으로 방향 설정 (회전 없음)
@@ -385,7 +382,6 @@ namespace graph_planner {
 
             // find nearest node from start
             string start_near = findClosestNode(start.getLat(), start.getLon());
-
             // find nearest node from goal
             string goal_near = findClosestNode(goal.getLat(), goal.getLon());
 
@@ -393,7 +389,6 @@ namespace graph_planner {
             graph_.addNode(goal);
 
             graph_.addLink(start.getID(), start_near, 0.1);
-            // graph_.addLink(goal.getID(), goal_near, 0.5);
             graph_.addLink(goal_near, goal.getID(), 0.1);
 
             // find path in graph

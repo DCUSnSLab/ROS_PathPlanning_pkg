@@ -15,9 +15,6 @@ using namespace graph_planner;
 GraphPlanner::GraphPlanner (){
     ROS_DEBUG("This is test msg for GraphPlanner(no attr)");
     std::cout << "This is test output(GraphPlanner(no attr))" << std::endl;
-
-
-    gps_sub_ = private_nh_.subscribe("/gps", 10, &GraphPlanner::gpsCallback, this);
 }
 
 GraphPlanner::GraphPlanner(std::string name, costmap_2d::Costmap2DROS* costmap_ros) {
@@ -35,6 +32,7 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
         ROS_DEBUG("This is test output(init)");
 
         mapservice_ = private_nh_.serviceClient<path_planning::MapGraph>("/map_server");
+        gps_sub_ = private_nh_.subscribe("/gps", 10, &GraphPlanner::gpsCallback, this);
         path_planning::MapGraph map_srv;
 
         map_srv.request.file_path = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
@@ -75,15 +73,16 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
 
 bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geometry_msgs::PoseStamped& goal,  std::vector<geometry_msgs::PoseStamped>& plan) {
     if (!initialized_) {
+        std::cout << "Global Planner is not initialized" << std::endl;
         ROS_ERROR("Global Planner is not initialized");
         return false;
         plan.clear();
-        // 최소한의 샘플 경로 생성
         plan.push_back(start);
         plan.push_back(goal);
         return true;
     }
     else {
+        plan.clear();
 
         ROS_INFO("Header:");
         ROS_INFO("  - Seq: %d", start.header.seq);
@@ -124,8 +123,6 @@ bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geome
         string start_id = "Start";
         string goal_id = "Goal";
         ROS_DEBUG("This is test output(makeplan)");
-        std::cout << current_utm_.first << std::fixed << std::endl;
-        std::cout << current_utm_.second << std::fixed << std::endl;
 
         GraphPlanner::Node start("Start", current_gps_.first, current_gps_.second, current_utm_.first, current_utm_.second);
         goal_utm_.first = map_utm_.first + goal.pose.position.x;
@@ -134,17 +131,7 @@ bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geome
         GraphPlanner::Node goal("Goal", goal_gps_.first, goal_gps_.second, goal_utm_.first, goal_utm_.second);
 
         GraphPlanner::gpsPathfinder(start, goal, plan);
-    }
-    // Below code block is important.
-    // If global plan failed, there are no data in vector(plan) and it occurs error to move_base Node
-    // DO NOT DELETE theses lines!!!
-    if (plan.empty()) {
-        plan.clear();
-        plan.push_back(start);
-        plan.push_back(goal);
-        return true;
-    }
-    else {
+
         std::cout << "planning.." << std::endl;
         return true;
     }
