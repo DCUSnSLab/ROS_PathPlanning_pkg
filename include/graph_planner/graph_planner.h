@@ -20,6 +20,10 @@
 #include <cmath>
 
 #include "ros/ros.h"
+
+#include "path_planning/MapGraph.h"
+#include "path_planning/DisplayMarkerMap.h"
+
 #include "path_planning/Node.h"
 #include "path_planning/NodeArray.h"
 #include "path_planning/Link.h"
@@ -94,8 +98,23 @@ namespace graph_planner {
 
         ros::NodeHandle private_nh_;
 
+        path_planning::MapGraph map_srv;
+
+
+        ros::ServiceClient mapservice_ = private_nh_.serviceClient<path_planning::MapGraph>("/map_server");
+        ros::ServiceClient mapdisplayservice_ = private_nh_.serviceClient<path_planning::DisplayMarkerMap>("/map_display_server");
+
         bool initialized_ = false;
         bool arrived_;
+        bool mapinit_ = false;
+
+        /*
+        In order to accurately project a map based on relative coordinates,
+        arbitrary reference coordinates are required.
+        Do it that way first and modify it later.
+        */
+        std::tuple<double, double, double> origin_gps_coordinates_ = std::make_tuple(37.23923857150045, 126.7731611307903, 28.940864029884338);  // origin coord
+        std::pair<double, double> origin_utm_ = std::make_pair(302473.690, 4123735.933);  //
 
         std::tuple<double, double, double> map_gps_coordinates_;  // first node's Coordinate in map data
         std::pair<double, double> map_utm_;  // same but UTM
@@ -104,7 +123,10 @@ namespace graph_planner {
         std::pair<double, double> current_utm_;
         std::pair<double, double> goal_gps_;
         std::pair<double, double> goal_utm_;
-        std::pair<double, double> waypoint_relative_utm_;  // 상대 UTM 좌표 (x, y)
+
+        std::pair<double, double> rviz_correction_;
+
+        // std::pair<double, double> waypoint_relative_utm_;  // 상대 UTM 좌표 (x, y)
 
         std::vector<path_planning::Node> nodes_;
         std::vector<path_planning::Link> links_;
@@ -112,8 +134,6 @@ namespace graph_planner {
         path_planning::NodeArray nodearr_;
         path_planning::NodeArray linkarr_;
 
-        ros::ServiceClient mapservice_;
-        ros::ServiceClient mapdisplayservice_;
         ros::Subscriber gps_sub_;
 
         string utm_zone_;
@@ -284,8 +304,6 @@ namespace graph_planner {
                     pose.pose.orientation.w = 1.0;  // 기본적으로 방향 설정 (회전 없음)
                     plan.push_back(pose);
                 }
-
-                std::reverse(plan.begin(), plan.end());
             }
         }
 
@@ -401,10 +419,71 @@ namespace graph_planner {
             std::cout << "Path finder called." << std::endl;
         }
 
+        void Callgraph() {
+            map_srv.request.file_path = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
+
+            if (mapservice_.call(map_srv)) {
+                ROS_INFO("success");
+                std::cout << "map service call" << std::endl;
+                std::cout << map_srv.response.map_graph.node_array.nodes[0].ID << std::endl; // cout for debug
+                //graph_ = map_srv.response.map_graph;
+                //ndarr_ = map_srv.response.map_graph.node_array;
+                bool initMapcoord = false;
+
+                for (const auto &node : map_srv.response.map_graph.node_array.nodes) {
+                    graph_.addNode(node.ID, node.Lat, node.Long, node.Easting, node.Northing);
+                    if (!initMapcoord) {
+                        map_gps_coordinates_ = std::make_tuple(node.Lat, node.Long, node.Alt);
+                        map_utm_.first = node.Easting;
+                        map_utm_.second = node.Northing;
+                        utm_zone_ = node.Zone;
+                        initMapcoord = true;
+                    }
+                }
+
+                for (const auto &link : map_srv.response.map_graph.link_array.links) {
+                    graph_.addLink(link.FromNodeID, link.ToNodeID, link.Length);
+                }
+
+                ROS_INFO("Create map graph");
+
+            } else {
+                std::cout << "error" << std::endl;
+                ROS_ERROR("error");
+            }
+        }
+
+        void DisplayMap() {
+            path_planning::DisplayMarkerMap map_display_srv;
+            map_display_srv.request.file_path = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
+
+//            map_display_srv.request.correction_val.x = current_utm_.first + origin_utm_.first - (map_utm_.first * 2);
+//            map_display_srv.request.correction_val.y = current_utm_.second + origin_utm_.second - (map_utm_.second * 2);
+
+            map_display_srv.request.correction_val.x = (map_utm_.first - origin_utm_.first) - (current_utm_.first - origin_utm_.first);
+            map_display_srv.request.correction_val.y = (map_utm_.second - origin_utm_.second) - (current_utm_.second - origin_utm_.second);
+
+            map_display_srv.request.correction_val.z = 0.0; // alt
+
+            std::cout << current_utm_.first << " " << origin_utm_.first << " " << map_utm_.first << std::endl;
+            std::cout << current_utm_.second << " " << origin_utm_.second << " " << map_utm_.second << std::endl;
+
+            if (mapdisplayservice_.call(map_display_srv)) {
+                std::cout << "map display service call" << std::endl;
+            } else {
+                std::cout << "map display error" << std::endl;
+                ROS_ERROR("map display error");
+            }
+        }
+
         void gpsCallback(const morai_msgs::GPSMessage::ConstPtr& msg) {
             current_gps_.first = msg->latitude;
             current_gps_.second = msg->longitude;
             latLonToUtm(msg->latitude, msg->longitude, current_utm_.first, current_utm_.second, utm_zone_);
+            if (!mapinit_) {
+                DisplayMap();
+                mapinit_ = true;
+            }
 //            ROS_INFO("Received GPS Data:");
 //            ROS_INFO("Latitude: %f", msg->latitude);
 //            ROS_INFO("Longitude: %f", msg->longitude);

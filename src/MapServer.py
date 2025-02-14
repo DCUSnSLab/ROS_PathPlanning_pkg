@@ -80,14 +80,17 @@ def graph_response(req):
 def marker_response(req):
     rospy.loginfo("Processing file: %s", req.file_path)
     try:
-        marker_array, ref_x, ref_y, ref_z = parse_json_and_visualize(req.file_path, (0.0, 0.0, 0.0))
+        marker_array, ref_x, ref_y, ref_z = parse_json_and_visualize(req.file_path, (req.correction_val.x, req.correction_val.y, req.correction_val.z))
 
         marker_pub = rospy.Publisher('visualization_marker_array', MarkerArray, queue_size=10, latch=True)
 
         marker_pub.publish(marker_array)
 
+        return True
+
     except Exception as e:
         rospy.logerr("Failed to process file %s: %s", req.file_path, str(e))
+        return False
 
 
 def multi_type_response_server():

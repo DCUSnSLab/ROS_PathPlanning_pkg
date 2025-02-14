@@ -32,48 +32,9 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
         std::cout << "This is test output(init)" << std::endl;
         ROS_DEBUG("This is test output(init)");
 
-        mapservice_ = private_nh_.serviceClient<path_planning::MapGraph>("/map_server");
-        mapdisplayservice_ = private_nh_.serviceClient<path_planning::DisplayMarkerMap>("/map_display_server");
         gps_sub_ = private_nh_.subscribe("/gps", 10, &GraphPlanner::gpsCallback, this);
-        path_planning::MapGraph map_srv;
-        path_planning::DisplayMarkerMap map_display_srv;
 
-        map_srv.request.file_path = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
-        map_display_srv.request.file_path = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
-
-        if (mapdisplayservice_.call(map_display_srv)) {
-            std::cout << "map display service call" << std::endl;
-        }
-
-        if (mapservice_.call(map_srv)) {
-            ROS_INFO("success");
-            std::cout << "map service call" << std::endl;
-            std::cout << map_srv.response.map_graph.node_array.nodes[0].ID << std::endl; // cout for debug
-            //graph_ = map_srv.response.map_graph;
-            //ndarr_ = map_srv.response.map_graph.node_array;
-            bool initMapcoord = false;
-
-            for (const auto &node : map_srv.response.map_graph.node_array.nodes) {
-                graph_.addNode(node.ID, node.Lat, node.Long, node.Easting, node.Northing);
-                if (!initMapcoord) {
-                    map_gps_coordinates_ = std::make_tuple(node.Lat, node.Long, node.Alt);
-                    map_utm_.first = node.Easting;
-                    map_utm_.second = node.Northing;
-                    utm_zone_ = node.Zone;
-                    initMapcoord = true;
-                }
-            }
-
-            for (const auto &link : map_srv.response.map_graph.link_array.links) {
-                graph_.addLink(link.FromNodeID, link.ToNodeID, link.Length);
-            }
-
-            ROS_INFO("Create map graph");
-
-        } else {
-            std::cout << "error" << std::endl;
-            ROS_ERROR("error");
-        }
+        Callgraph();
 
         initialized_ = true;
     }
