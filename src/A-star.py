@@ -71,7 +71,6 @@ class PathPlanner:
 
     def gps_callback(self, gps_msg):
         """Callback to update the current position with UTM coordinates."""
-        tf_broadcaster = tf.TransformBroadcaster()
         self.current_position_gps = (gps_msg.latitude, gps_msg.longitude, gps_msg.altitude)
         utm_x, utm_y = self.transformer_to_utm.transform(gps_msg.longitude, gps_msg.latitude)
         self.current_position_utm = (utm_x, utm_y)

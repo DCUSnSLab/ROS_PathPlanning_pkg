@@ -19,10 +19,8 @@ GraphPlanner::GraphPlanner (){
     ROS_DEBUG("This is test msg for GraphPlanner(no attr)");
     std::cout << "This is test output(GraphPlanner(no attr))" << std::endl;
 
-    ros::NodeHandle private_nh;
 
-    mapservice_ = private_nh.serviceClient<path_planning::MapGraph>("/map_server");
-    gps_sub_ = private_nh.subscribe("/gps", 10, &GraphPlanner::gpsCallback, this);
+    gps_sub_ = private_nh_.subscribe("/gps", 10, &GraphPlanner::gpsCallback, this);
 }
 
 GraphPlanner::GraphPlanner(std::string name, costmap_2d::Costmap2DROS* costmap_ros) {
@@ -32,21 +30,24 @@ GraphPlanner::GraphPlanner(std::string name, costmap_2d::Costmap2DROS* costmap_r
 }
 
 void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costmap_ros) {
+    std::cout << "initialize called." << std::endl;
+    ROS_DEBUG("initialize called.");
     // GraphPlanner::Node node; // instance example
-    if(!initialized_){
+    if(!initialized_) {
         std::cout << "This is test output(init)" << std::endl;
         ROS_DEBUG("This is test output(init)");
 
+        mapservice_ = private_nh_.serviceClient<path_planning::MapGraph>("/map_server");
         path_planning::MapGraph map_srv;
 
         map_srv.request.file_path = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
 
         if (mapservice_.call(map_srv)) {
             ROS_INFO("success");
-            std::cout << map_srv.response.map_graph.node_array.nodes[0].ID << endl; // cout for debug
+            std::cout << "map service call" << std::endl;
+            std::cout << map_srv.response.map_graph.node_array.nodes[0].ID << std::endl; // cout for debug
             //graph_ = map_srv.response.map_graph;
             //ndarr_ = map_srv.response.map_graph.node_array;
-            graph_ = GraphPlanner::Graph();
 
             for (const auto &node : map_srv.response.map_graph.node_array.nodes) {
                 graph_.addNode(node.ID, node.Lat, node.Long);
@@ -73,6 +74,7 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
             }
             */
         } else {
+            std::cout << "error" << std::endl;
             ROS_ERROR("error");
         }
 
@@ -122,5 +124,20 @@ bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geome
         string start_id = "Start";
         string goal_id = "Goal";
         ROS_DEBUG("This is test output(makeplan)");
+        std::cout << current_utm_.first << std::fixed << std::endl;
+        std::cout << current_utm_.second << std::fixed << std::endl;
+
+        // Add Start Node
+        //graph_.addNode(start_id, current_utm_.first, current_utm_.second);
+        //graph_.addLink(link.FromNodeID, link.ToNodeID, link.Length);
+
+        GraphPlanner::Node start("Start", current_utm_.first, current_utm_.second);
+        GraphPlanner::Node goal("Goal", current_utm_.first, current_utm_.second);
+
+        GraphPlanner::gpsPathfinder(start, goal, plan);
+
+        // Add Goal Node
+        //graph_.addNode(goal_id, node.Lat, node.Long);
+        //graph_.addLink(link.FromNodeID, link.ToNodeID, link.Length);
     }
 }

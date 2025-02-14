@@ -5,6 +5,7 @@
 #define GLOBAL_PLANNER_CPP
 
 #include <ros/ros.h>
+#include <GeographicLib/UTMUPS.hpp>
 #include <costmap_2d/costmap_2d_ros.h>
 #include <costmap_2d/costmap_2d.h>
 #include <nav_core/base_global_planner.h>
@@ -30,23 +31,6 @@ using std::string;
 
 namespace graph_planner {
     class GraphPlanner : public nav_core::BaseGlobalPlanner {
-    public:
-        GraphPlanner();
-        ~GraphPlanner() {
-        };
-        GraphPlanner(std::string name, costmap_2d::Costmap2DROS* costmap_ros);
-
-        void initialize(std::string name, costmap_2d::Costmap2DROS* costmap_ros);
-        bool makePlan(const geometry_msgs::PoseStamped& start,
-            const geometry_msgs::PoseStamped& goal,
-            std::vector<geometry_msgs::PoseStamped>& plan);
-        void gpsCallback(const morai_msgs::GPSMessage::ConstPtr& msg) {
-            ROS_INFO("Received GPS Data:");
-            ROS_INFO("Latitude: %f", msg->latitude);
-            ROS_INFO("Longitude: %f", msg->longitude);
-            ROS_INFO("Altitude: %f", msg->altitude);
-        }
-
         class Node {
         private:
             string id;
@@ -79,6 +63,10 @@ namespace graph_planner {
                 std::cout << "Graph() Created" << std::endl;
             }
             ~Graph() {}
+            void addNode(Node node) {
+                nodes[node.getID()] = node;
+            }
+
             void addNode(const string& id, double lat, double lon) {
                 nodes[id] = Node(id, lat, lon);
             }
@@ -86,7 +74,7 @@ namespace graph_planner {
             void addLink(const string& from_id, const string& to_id, double weight) {
                 if (nodes.find(from_id) != nodes.end() && nodes.find(to_id) != nodes.end()) {
                     nodes[from_id].addNeighbor(to_id, weight);
-                    nodes[to_id].addNeighbor(from_id, weight);
+                    // nodes[to_id].addNeighbor(from_id, weight);
                 }
             }
 
@@ -97,9 +85,68 @@ namespace graph_planner {
                 return (it != nodes.end()) ? &(it->second) : nullptr;
             }
         };
+    private:
+        GraphPlanner::Graph graph_;
+
+        ros::Subscriber gps_sub;
+
+        ros::NodeHandle private_nh_;
+
+        bool initialized_ = false;
+        bool arrived_;
+
+        std::pair<double, double> origin_utm_;      // UTM 좌표 원점 (x, y)
+        std::pair<double, double> current_utm_;
+        std::pair<double, double> waypoint_relative_utm_;  // 상대 UTM 좌표 (x, y)
+
+        std::tuple<double, double, double> map_gps_coordinates_;  // (위도, 경도, 고도)
+        std::pair<double, double> map_utm_;  // (x, y)
+
+        std::vector<path_planning::Node> nodes_;
+        std::vector<path_planning::Link> links_;
+
+        path_planning::NodeArray nodearr_;
+        path_planning::NodeArray linkarr_;
+
+        ros::ServiceClient mapservice_;
+        ros::Subscriber gps_sub_;
+
+        string utm_zone_;
+    public:
+        GraphPlanner();
+        ~GraphPlanner() {
+        };
+        GraphPlanner(std::string name, costmap_2d::Costmap2DROS* costmap_ros);
+
+        void initialize(std::string name, costmap_2d::Costmap2DROS* costmap_ros);
+        bool makePlan(const geometry_msgs::PoseStamped& start,
+            const geometry_msgs::PoseStamped& goal,
+            std::vector<geometry_msgs::PoseStamped>& plan);
+
+        double heuristic(double a_lat, double a_lon, double b_lat, double b_lon) {
+            return sqrt(pow(a_lat - b_lat, 2) + pow(a_lon - b_lon, 2));
+        }
 
         double heuristic(const Node& a, const Node& b) {
             return sqrt(pow(a.getLat() - b.getLat(), 2) + pow(a.getLon() - b.getLon(), 2));
+        }
+
+        std::string findClosestNode(double lat, double lon) {
+            std::cout << "findClosestNode called." << std::endl;
+            std::string closest_node_id;
+            double min_distance = std::numeric_limits<double>::max();
+
+            for (const auto& [node_id, node] : graph_.getNodes()) {
+                double node_lat = node.getLat();
+                double node_lon = node.getLon();
+                double distance = heuristic(lat, lon, node_lat, node_lon);
+
+                if (distance < min_distance) {
+                    min_distance = distance;
+                    closest_node_id = node_id;
+                }
+            }
+            return closest_node_id;
         }
 
         std::vector<string> findPath(const Graph& graph, const string& start_id, const string& goal_id) {
@@ -153,30 +200,84 @@ namespace graph_planner {
             std::reverse(path.begin(), path.end());
             return path;
         }
-    private:
-        GraphPlanner::Graph graph_;
+        void latLonToUtm(double lat, double lon, double &utm_x, double &utm_y, std::string &utm_zone) {
+            /*
+            Temp function,
+            Replaced with corresponding code due to delayed availability testing of GPS-related libraries
+            Future changes required
+            */
+            int zone = static_cast<int>(std::floor((lon + 180) / 6) + 1);
+            bool north = (lat >= 0);
 
-        ros::Subscriber gps_sub;
+            double a = 6378137.0; // WGS84 타원체의 반경
+            double f = 1 / 298.257223563;
+            double k0 = 0.9996;
+            double e = std::sqrt(f * (2 - f));
+            double n = f / (2 - f);
 
-        bool initialized_;
-        bool arrived_;
+            double lambda0 = (zone - 1) * 6 - 180 + 3;
+            double phi = lat * M_PI / 180.0;
+            double lambda = lon * M_PI / 180.0;
+            double lambda_diff = lambda - lambda0 * M_PI / 180.0;
 
-        std::pair<double, double> origin_utm_;      // UTM 좌표 원점 (x, y)
-        std::pair<double, double> waypoint_relative_utm_;  // 상대 UTM 좌표 (x, y)
+            double N = a / std::sqrt(1 - e * e * std::sin(phi) * std::sin(phi));
+            double T = std::tan(phi) * std::tan(phi);
+            double C = (e * e / (1 - e * e)) * std::cos(phi) * std::cos(phi);
+            double A = std::cos(phi) * lambda_diff;
 
-        std::tuple<double, double, double> map_gps_coordinates_;  // (위도, 경도, 고도)
-        std::pair<double, double> map_utm_;  // (x, y)
+            double M = a * ((1 - e * e / 4 - 3 * e * e * e * e / 64 - 5 * e * e * e * e * e * e / 256) * phi
+                            - (3 * e * e / 8 + 3 * e * e * e * e / 32 + 45 * e * e * e * e * e * e / 1024) * std::sin(2 * phi)
+                            + (15 * e * e * e * e / 256 + 45 * e * e * e * e * e * e / 1024) * std::sin(4 * phi)
+                            - (35 * e * e * e * e * e * e / 3072) * std::sin(6 * phi));
 
-        std::vector<path_planning::Node> nodes_;
-        std::vector<path_planning::Link> links_;
+            utm_x = k0 * N * (A + (1 - T + C) * A * A * A / 6.0 + (5 - 18 * T + T * T + 72 * C - 58 * (e * e / (1 - e * e))) * A * A * A * A * A / 120.0) + 500000.0;
+            utm_y = k0 * (M + N * std::tan(phi) * (A * A / 2.0 + (5 - T + 9 * C + 4 * C * C) * A * A * A * A / 24.0
+                             + (61 - 58 * T + T * T + 600 * C - 330 * (e * e / (1 - e * e))) * A * A * A * A * A * A / 720.0));
 
-        path_planning::NodeArray nodearr_;
-        path_planning::NodeArray linkarr_;
+            if (!north) {
+                utm_y += 10000000.0; // 남반구 보정
+            }
 
-        ros::ServiceClient mapservice_;
-        ros::Subscriber gps_sub_;
+            utm_zone = std::to_string(zone) + (north ? "N" : "S");
+        }
+        void gpsPathfinder(Node& start, Node& goal, std::vector<geometry_msgs::PoseStamped>& plan) {
+            /*
+            Load the path from the current location to the target point into the PoseStamped message vector.
+            */
 
-        int utm_zone_;
+            // find nearest node from start
+            string start_near = findClosestNode(start.getLat(), start.getLon());
+
+            // find nearest node from goal
+            string goal_near = findClosestNode(goal.getLat(), goal.getLon());
+
+            graph_.addNode(start);
+            graph_.addNode(goal);
+
+            graph_.addLink(start.getID(), start_near, 0.5);
+            // graph_.addLink(goal.getID(), goal_near, 0.5);
+            graph_.addLink(goal_near, goal.getID(), 0.5);
+
+            std::vector<string> path = findPath(graph_, start.getID(), goal.getID());
+
+            if (!path.empty()) {
+                for (const auto &id : path) {
+                    ROS_INFO("%s", id.c_str());
+                }
+            } else {
+                ROS_WARN("Warn");
+            }
+
+            std::cout << "Path finder called." << std::endl;
+        }
+
+        void gpsCallback(const morai_msgs::GPSMessage::ConstPtr& msg) {
+            latLonToUtm(msg->latitude, msg->longitude, current_utm_.first, current_utm_.second, utm_zone_);
+//            ROS_INFO("Received GPS Data:");
+//            ROS_INFO("Latitude: %f", msg->latitude);
+//            ROS_INFO("Longitude: %f", msg->longitude);
+//            ROS_INFO("Altitude: %f", msg->altitude);
+        }
     };
 };
 #endif

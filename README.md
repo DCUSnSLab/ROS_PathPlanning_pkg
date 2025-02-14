@@ -3,10 +3,12 @@ Pathplanning on specified vertices
 
 ## Build
 
-before catkin_make, must build custom msgs in path_planning pkg
+before catkin_make, must build custom msgs in path_planning and morai_msgs pkg
 
 ```bash
-catkin_make --only-pkg-with-deps path_planning
+catkin_make path_planning_generate_messages
+
+catkin_make morai_msgs_generate_messages
 
 source devel/setup.bash
 
