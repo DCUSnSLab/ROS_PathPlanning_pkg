@@ -296,8 +296,8 @@ namespace graph_planner {
 //                    pose.pose.position.x = tmp->getEasting();  // x 좌표
 //                    pose.pose.position.y = tmp->getNorthing(); // y 좌표
 
-                    pose.pose.position.x = tmp->getEasting() - map_utm_.first;  // x 좌표
-                    pose.pose.position.y = tmp->getNorthing() - map_utm_.second; // y 좌표
+                    pose.pose.position.x = tmp->getEasting() - origin_utm_.first;  // x 좌표
+                    pose.pose.position.y = tmp->getNorthing() - origin_utm_.second; // y 좌표
 
                     pose.pose.position.z = 0.0;  // 기본값으로 z=0 설정
 
@@ -403,8 +403,12 @@ namespace graph_planner {
 
             // find nearest node from start
             string start_near = findClosestNode(start.getLat(), start.getLon());
+            std::cout << "start_near" << std::endl;
+            std::cout << start_near << std::endl;
             // find nearest node from goal
             string goal_near = findClosestNode(goal.getLat(), goal.getLon());
+            std::cout << "goal_near" << std::endl;
+            std::cout << goal_near << std::endl;
 
             graph_.addNode(start);
             graph_.addNode(goal);
@@ -460,8 +464,8 @@ namespace graph_planner {
 //            map_display_srv.request.correction_val.x = current_utm_.first + origin_utm_.first - (map_utm_.first * 2);
 //            map_display_srv.request.correction_val.y = current_utm_.second + origin_utm_.second - (map_utm_.second * 2);
 
-            map_display_srv.request.correction_val.x = (map_utm_.first - origin_utm_.first) - (current_utm_.first - origin_utm_.first);
-            map_display_srv.request.correction_val.y = (map_utm_.second - origin_utm_.second) - (current_utm_.second - origin_utm_.second);
+            map_display_srv.request.correction_val.x = origin_utm_.first;
+            map_display_srv.request.correction_val.y = origin_utm_.second;
 
             map_display_srv.request.correction_val.z = 0.0; // alt
 

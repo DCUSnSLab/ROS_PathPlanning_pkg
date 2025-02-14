@@ -37,14 +37,19 @@ def parse_json_and_visualize(file_path, correction_val):
         node_id = node["ID"]
         gps_info = node["GpsInfo"]
         lat, lon, alt = gps_info["Lat"], gps_info["Long"], gps_info["Alt"]
-        utm_x, utm_y = gps_to_utm(lat, lon)
+        # utm_x, utm_y = gps_to_utm(lat, lon)
+
+        utm_info = node["UtmInfo"]
+        utm_x, utm_y, zone = utm_info["Easting"], utm_info["Northing"], utm_info["Zone"]
 
         # 기준점을 기준으로 상대 좌표 계산
         relative_x = utm_x - ref_x
         relative_y = utm_y - ref_y
         relative_z = alt
         # position = [relative_x, relative_y, 0]
-        position = [relative_x + correction_val[0], relative_y + correction_val[1], correction_val[2]]
+        # position = [relative_x + correction_val[0], relative_y + correction_val[1], correction_val[2]]
+        position = [utm_x - correction_val[0], utm_y - correction_val[1], correction_val[2]]
+        # position = [utm_x, utm_y, correction_val[2]]
         node_positions[node_id] = position
 
         cube_marker = create_marker(
