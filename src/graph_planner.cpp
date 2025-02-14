@@ -76,13 +76,6 @@ bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geome
         return true;
     }
     else {
-        // Below code block is important.
-        // If global plan failed, there are no data in vector(plan) and it occurs error to move_base Node
-        // DO NOT DELETE theses lines!!!
-        plan.clear();
-        plan.push_back(start);
-        plan.push_back(goal);
-        // REAL
 
         ROS_INFO("Header:");
         ROS_INFO("  - Seq: %d", start.header.seq);
@@ -131,4 +124,12 @@ bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geome
 
         GraphPlanner::gpsPathfinder(start, goal, plan);
     }
+    // Below code block is important.
+    // If global plan failed, there are no data in vector(plan) and it occurs error to move_base Node
+    // DO NOT DELETE theses lines!!!
+    plan.clear();
+    plan.push_back(start);
+    plan.push_back(goal);
+    return true;
+    // REAL
 }
