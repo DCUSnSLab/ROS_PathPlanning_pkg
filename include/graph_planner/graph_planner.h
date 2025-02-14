@@ -5,7 +5,6 @@
 #define GLOBAL_PLANNER_CPP
 
 #include <ros/ros.h>
-#include <GeographicLib/UTMUPS.hpp>
 #include <costmap_2d/costmap_2d_ros.h>
 #include <costmap_2d/costmap_2d.h>
 #include <nav_core/base_global_planner.h>
@@ -35,6 +34,8 @@ namespace graph_planner {
         private:
             string id;
             double lat, lon;
+            double easting, northing;
+            string zone;
             std::vector<std::pair<string, double>> neighbors;
         public:
             Node() {
@@ -42,7 +43,7 @@ namespace graph_planner {
                 //std::cout << "Node() Created" << std::endl;
             }
             ~Node() {}
-            Node(const string& id, double lat, double lon) : id(id), lat(lat), lon(lon) {}
+            Node(const string& id, double lat, double lon, double easting, double northing) : id(id), lat(lat), lon(lon), easting(easting), northing(northing) {}
             void addNeighbor(const string& neighbor_id, double weight) {
                 neighbors.emplace_back(neighbor_id, weight);
             }
@@ -51,7 +52,8 @@ namespace graph_planner {
             string getID() const { return id; }
             double getLat() const { return lat; }
             double getLon() const { return lon; }
-
+            double getEasting() const { return easting; }
+            double getNorthing() const { return northing; }
 
         };
         class Graph {
@@ -67,14 +69,14 @@ namespace graph_planner {
                 nodes[node.getID()] = node;
             }
 
-            void addNode(const string& id, double lat, double lon) {
-                nodes[id] = Node(id, lat, lon);
+            void addNode(const string& id, double lat, double lon, double easting, double northing) {
+                nodes[id] = Node(id, lat, lon, easting, northing);
             }
 
             void addLink(const string& from_id, const string& to_id, double weight) {
                 if (nodes.find(from_id) != nodes.end() && nodes.find(to_id) != nodes.end()) {
                     nodes[from_id].addNeighbor(to_id, weight);
-                    // nodes[to_id].addNeighbor(from_id, weight);
+                    nodes[to_id].addNeighbor(from_id, weight);
                 }
             }
 
@@ -96,6 +98,7 @@ namespace graph_planner {
         bool arrived_;
 
         std::pair<double, double> origin_utm_;      // UTM 좌표 원점 (x, y)
+        std::pair<double, double> current_gps_;
         std::pair<double, double> current_utm_;
         std::pair<double, double> waypoint_relative_utm_;  // 상대 UTM 좌표 (x, y)
 
@@ -150,6 +153,10 @@ namespace graph_planner {
         }
 
         std::vector<string> findPath(const Graph& graph, const string& start_id, const string& goal_id) {
+            /*
+            This function performs a simple string output for the optimal path,
+            so you must use the separately implemented function below.
+            */
             struct AStarNode {
                 string id;
                 double g_cost, h_cost;
@@ -200,6 +207,68 @@ namespace graph_planner {
             std::reverse(path.begin(), path.end());
             return path;
         }
+
+        void findPath(const Graph& graph, const string& start_id, const string& goal_id, std::vector<geometry_msgs::PoseStamped>& plan) {
+            struct AStarNode {
+                string id;
+                double g_cost, h_cost;
+                double lat, lon, easting, northing;
+
+                double f_cost() const { return g_cost + h_cost; }
+                bool operator>(const AStarNode &other) const { return f_cost() > other.f_cost(); }
+            };
+
+            std::priority_queue<AStarNode, std::vector<AStarNode>, std::greater<AStarNode>> pq;
+            std::unordered_map<string, double> g_cost;
+            std::unordered_map<string, string> parent;
+
+            const Node* start = graph.getNode(start_id);
+            const Node* goal = graph.getNode(goal_id);
+            if (!start || !goal) {
+                ROS_WARN("시작 또는 목표 노드가 그래프에 없습니다!");
+            }
+            else {
+                g_cost[start_id] = 0;
+                pq.push({start_id, 0, heuristic(*start, *goal), start->getLat(), start->getLon(), start->getEasting(), start->getNorthing()});
+
+                while (!pq.empty()) {
+                    AStarNode current = pq.top();
+                    pq.pop();
+
+                    if (current.id == goal_id) break;
+
+                    const Node* currentNode = graph.getNode(current.id);
+                    if (!currentNode) continue;
+
+                    for (const auto &[neighbor_id, weight] : currentNode->getNeighbors()) {
+                        const Node* neighborNode = graph.getNode(neighbor_id);
+                        if (!neighborNode) continue;
+
+                        double new_g_cost = g_cost[current.id] + weight;
+                        if (g_cost.find(neighbor_id) == g_cost.end() || new_g_cost < g_cost[neighbor_id]) {
+                            g_cost[neighbor_id] = new_g_cost;
+                            parent[neighbor_id] = current.id;
+                            pq.push({neighbor_id, new_g_cost, heuristic(*neighborNode, *goal), neighborNode->getLat(), neighborNode->getLon(), neighborNode->getEasting(), neighborNode->getNorthing()});
+                        }
+                    }
+                }
+
+                // 경로 재구성
+                std::vector<string> path;
+                for (string at = goal_id; parent.find(at) != parent.end(); at = parent[at])
+                    path.push_back(at);
+
+                while (!pq.empty()) {
+                    AStarNode current = pq.top();
+                    pq.pop();
+
+                    ROS_INFO("Processing Node ID: %s", current.id.c_str());
+                    ROS_INFO("Latitude: %f, Longitude: %f", current.lat, current.lon);
+                    ROS_INFO("Easting: %f, Northing: %f", current.easting, current.northing);
+                }
+            }
+        }
+
         void latLonToUtm(double lat, double lon, double &utm_x, double &utm_y, std::string &utm_zone) {
             /*
             Temp function,
@@ -254,24 +323,22 @@ namespace graph_planner {
             graph_.addNode(start);
             graph_.addNode(goal);
 
-            graph_.addLink(start.getID(), start_near, 0.5);
+            graph_.addLink(start.getID(), start_near, 0.1);
             // graph_.addLink(goal.getID(), goal_near, 0.5);
-            graph_.addLink(goal_near, goal.getID(), 0.5);
+            graph_.addLink(goal_near, goal.getID(), 0.1);
 
-            std::vector<string> path = findPath(graph_, start.getID(), goal.getID());
+            // std::vector<string> path = findPath(graph_, start.getID(), goal.getID());
 
-            if (!path.empty()) {
-                for (const auto &id : path) {
-                    ROS_INFO("%s", id.c_str());
-                }
-            } else {
-                ROS_WARN("Warn");
-            }
+            // find path in graph
+            // findPath(graph_, start.getID(), goal.getID(), plan);
+            findPath(graph_, "N0000", "N0028", plan);
 
             std::cout << "Path finder called." << std::endl;
         }
 
         void gpsCallback(const morai_msgs::GPSMessage::ConstPtr& msg) {
+            current_gps_.first = msg->latitude;
+            current_gps_.second = msg->longitude;
             latLonToUtm(msg->latitude, msg->longitude, current_utm_.first, current_utm_.second, utm_zone_);
 //            ROS_INFO("Received GPS Data:");
 //            ROS_INFO("Latitude: %f", msg->latitude);

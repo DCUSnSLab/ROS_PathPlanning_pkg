@@ -3,9 +3,6 @@
 #include "path_planning/MapGraph.h"
 #include "morai_msgs/GPSMessage.h"
 #include <iostream>
-#include <typeinfo>
-
-#include <global_planner/astar.h>
 
  //register this planner as a BaseGlobalPlanner plugin
 PLUGINLIB_EXPORT_CLASS(graph_planner::GraphPlanner, nav_core::BaseGlobalPlanner)
@@ -50,7 +47,7 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
             //ndarr_ = map_srv.response.map_graph.node_array;
 
             for (const auto &node : map_srv.response.map_graph.node_array.nodes) {
-                graph_.addNode(node.ID, node.Lat, node.Long);
+                graph_.addNode(node.ID, node.Lat, node.Long, node.Easting, node.Northing);
             }
 
             for (const auto &link : map_srv.response.map_graph.link_array.links) {
@@ -59,20 +56,6 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
 
             ROS_INFO("Create map graph");
 
-            /*
-            // Temp code for A* planning test
-            string start_id = "N0000";
-            string goal_id = "N0028";
-            std::vector<string> path = findPath(graph_, start_id, goal_id);
-
-            if (!path.empty()) {
-                for (const auto &id : path) {
-                    ROS_INFO("%s", id.c_str());
-                }
-            } else {
-                ROS_WARN("경로를 찾을 수 없습니다.");
-            }
-            */
         } else {
             std::cout << "error" << std::endl;
             ROS_ERROR("error");
@@ -83,43 +66,59 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
 }
 
 bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geometry_msgs::PoseStamped& goal,  std::vector<geometry_msgs::PoseStamped>& plan) {
-    ROS_INFO("Header:");
-    ROS_INFO("  - Seq: %d", start.header.seq);
-    ROS_INFO("  - Stamp: %d.%d", (int)start.header.stamp.sec, (int)start.header.stamp.nsec);
-    ROS_INFO("  - Frame ID: %s", start.header.frame_id.c_str());
+    if (!initialized_) {
+        ROS_ERROR("Global Planner is not initialized");
+        return false;
+        plan.clear();
+        // 최소한의 샘플 경로 생성
+        plan.push_back(start);
+        plan.push_back(goal);
+        return true;
+    }
+    else {
+        // Below code block is important.
+        // If global plan failed, there are no data in vector(plan) and it occurs error to move_base Node
+        // DO NOT DELETE theses lines!!!
+        plan.clear();
+        plan.push_back(start);
+        plan.push_back(goal);
+        // REAL
 
-    // Position 정보
-    ROS_INFO("Position:");
-    ROS_INFO("  - x: %f", start.pose.position.x);
-    ROS_INFO("  - y: %f", start.pose.position.y);
-    ROS_INFO("  - z: %f", start.pose.position.z);
+        ROS_INFO("Header:");
+        ROS_INFO("  - Seq: %d", start.header.seq);
+        ROS_INFO("  - Stamp: %d.%d", (int)start.header.stamp.sec, (int)start.header.stamp.nsec);
+        ROS_INFO("  - Frame ID: %s", start.header.frame_id.c_str());
 
-    // Orientation 정보 (Quaternion)
-    ROS_INFO("Orientation:");
-    ROS_INFO("  - x: %f", start.pose.orientation.x);
-    ROS_INFO("  - y: %f", start.pose.orientation.y);
-    ROS_INFO("  - z: %f", start.pose.orientation.z);
-    ROS_INFO("  - w: %f", start.pose.orientation.w);
+        // Position 정보
+        ROS_INFO("Position:");
+        ROS_INFO("  - x: %f", start.pose.position.x);
+        ROS_INFO("  - y: %f", start.pose.position.y);
+        ROS_INFO("  - z: %f", start.pose.position.z);
 
-    ROS_INFO("Header:");
-    ROS_INFO("  - Seq: %d", goal.header.seq);
-    ROS_INFO("  - Stamp: %d.%d", (int)goal.header.stamp.sec, (int)goal.header.stamp.nsec);
-    ROS_INFO("  - Frame ID: %s", goal.header.frame_id.c_str());
+        // Orientation 정보 (Quaternion)
+        ROS_INFO("Orientation:");
+        ROS_INFO("  - x: %f", start.pose.orientation.x);
+        ROS_INFO("  - y: %f", start.pose.orientation.y);
+        ROS_INFO("  - z: %f", start.pose.orientation.z);
+        ROS_INFO("  - w: %f", start.pose.orientation.w);
 
-    // Position 정보
-    ROS_INFO("Position:");
-    ROS_INFO("  - x: %f", goal.pose.position.x);
-    ROS_INFO("  - y: %f", goal.pose.position.y);
-    ROS_INFO("  - z: %f", goal.pose.position.z);
+        ROS_INFO("Header:");
+        ROS_INFO("  - Seq: %d", goal.header.seq);
+        ROS_INFO("  - Stamp: %d.%d", (int)goal.header.stamp.sec, (int)goal.header.stamp.nsec);
+        ROS_INFO("  - Frame ID: %s", goal.header.frame_id.c_str());
 
-    // Orientation 정보 (Quaternion)
-    ROS_INFO("Orientation:");
-    ROS_INFO("  - x: %f", goal.pose.orientation.x);
-    ROS_INFO("  - y: %f", goal.pose.orientation.y);
-    ROS_INFO("  - z: %f", goal.pose.orientation.z);
-    ROS_INFO("  - w: %f", goal.pose.orientation.w);
+        // Position 정보
+        ROS_INFO("Position:");
+        ROS_INFO("  - x: %f", goal.pose.position.x);
+        ROS_INFO("  - y: %f", goal.pose.position.y);
+        ROS_INFO("  - z: %f", goal.pose.position.z);
 
-    if (!arrived_) { // Tmp if block for test makePlan
+        // Orientation 정보 (Quaternion)
+        ROS_INFO("Orientation:");
+        ROS_INFO("  - x: %f", goal.pose.orientation.x);
+        ROS_INFO("  - y: %f", goal.pose.orientation.y);
+        ROS_INFO("  - z: %f", goal.pose.orientation.z);
+        ROS_INFO("  - w: %f", goal.pose.orientation.w);
 
         string start_id = "Start";
         string goal_id = "Goal";
@@ -127,17 +126,9 @@ bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geome
         std::cout << current_utm_.first << std::fixed << std::endl;
         std::cout << current_utm_.second << std::fixed << std::endl;
 
-        // Add Start Node
-        //graph_.addNode(start_id, current_utm_.first, current_utm_.second);
-        //graph_.addLink(link.FromNodeID, link.ToNodeID, link.Length);
-
-        GraphPlanner::Node start("Start", current_utm_.first, current_utm_.second);
-        GraphPlanner::Node goal("Goal", current_utm_.first, current_utm_.second);
+        GraphPlanner::Node start("Start", current_gps_.first, current_gps_.second, current_utm_.first, current_utm_.second);
+        GraphPlanner::Node goal("Goal", current_gps_.first + 100.0, current_gps_.second + 100.0, current_utm_.first + 10000.0, current_utm_.second + 10000.0);
 
         GraphPlanner::gpsPathfinder(start, goal, plan);
-
-        // Add Goal Node
-        //graph_.addNode(goal_id, node.Lat, node.Long);
-        //graph_.addLink(link.FromNodeID, link.ToNodeID, link.Length);
     }
 }
