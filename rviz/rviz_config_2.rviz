@@ -9,6 +9,9 @@ Panels:
         - /Path1
         - /Path1/Offset1
         - /Path2
+        - /Odometry1
+        - /Odometry1/Shape1
+        - /Odometry1/Covariance1
       Splitter Ratio: 0.5
     Tree Height: 958
   - Class: rviz/Selection
@@ -102,6 +105,49 @@ Visualization Manager:
       Topic: /move_base/TebLocalPlannerROS/local_plan
       Unreliable: false
       Value: true
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz/Odometry
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: true
+        Position:
+          Alpha: 0.30000001192092896
+          Color: 204; 51; 204
+          Scale: 1
+          Value: true
+        Value: true
+      Enabled: true
+      Keep: 1
+      Name: Odometry
+      Position Tolerance: 0.10000000149011612
+      Queue Size: 10
+      Shape:
+        Alpha: 1
+        Axes Length: 1
+        Axes Radius: 0.10000000149011612
+        Color: 255; 25; 0
+        Head Length: 2
+        Head Radius: 3
+        Shaft Length: 5
+        Shaft Radius: 1.5
+        Value: Arrow
+      Topic: /odom/coordinate
+      Unreliable: false
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: visualization_marker_array
+      Name: MarkerArray
+      Namespaces:
+        waypoint_visualization: true
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -130,7 +176,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 347.84552001953125
+      Distance: 468.3085632324219
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -146,9 +192,9 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5647963285446167
-      Target Frame: gps
-      Yaw: 1.638576626777649
+      Pitch: 1.2047960758209229
+      Target Frame: base_link
+      Yaw: 3.8703951835632324
     Saved: ~
 Window Geometry:
   Displays:
@@ -166,5 +212,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1791
-  X: -32
-  Y: -32
+  X: 70
+  Y: 478

@@ -113,6 +113,7 @@ namespace graph_planner {
         path_planning::NodeArray linkarr_;
 
         ros::ServiceClient mapservice_;
+        ros::ServiceClient mapdisplayservice_;
         ros::Subscriber gps_sub_;
 
         string utm_zone_;
@@ -283,6 +284,8 @@ namespace graph_planner {
                     pose.pose.orientation.w = 1.0;  // 기본적으로 방향 설정 (회전 없음)
                     plan.push_back(pose);
                 }
+
+                std::reverse(plan.begin(), plan.end());
             }
         }
 

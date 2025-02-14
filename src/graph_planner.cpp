@@ -1,6 +1,7 @@
 #include <pluginlib/class_list_macros.h>
 #include "../include/graph_planner/graph_planner.h"
 #include "path_planning/MapGraph.h"
+#include "path_planning/DisplayMarkerMap.h"
 #include "morai_msgs/GPSMessage.h"
 #include <iostream>
 
@@ -32,10 +33,17 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
         ROS_DEBUG("This is test output(init)");
 
         mapservice_ = private_nh_.serviceClient<path_planning::MapGraph>("/map_server");
+        mapdisplayservice_ = private_nh_.serviceClient<path_planning::DisplayMarkerMap>("/map_display_server");
         gps_sub_ = private_nh_.subscribe("/gps", 10, &GraphPlanner::gpsCallback, this);
         path_planning::MapGraph map_srv;
+        path_planning::DisplayMarkerMap map_display_srv;
 
         map_srv.request.file_path = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
+        map_display_srv.request.file_path = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
+
+        if (mapdisplayservice_.call(map_display_srv)) {
+            std::cout << "map display service call" << std::endl;
+        }
 
         if (mapservice_.call(map_srv)) {
             ROS_INFO("success");

@@ -14,7 +14,7 @@ import tf
 from tf.transformations import quaternion_from_euler
 
 from visualize_path import parse_json_and_visualize
-from path_planning.msg import Graph, Node, NodeArray, Link, LinkArray
+from path_planning.msg import GraphMsg, Node, NodeArray, Link, LinkArray
 
 class PathPlanner:
     def __init__(self):

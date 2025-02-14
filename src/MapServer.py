@@ -3,11 +3,9 @@
 
 import json
 import rospy
+from path_planning.srv import MapGraph, DisplayMarkerMap
+from visualize_path import parse_json_and_visualize
 from visualization_msgs.msg import Marker, MarkerArray
-from geometry_msgs.msg import Point
-from path_planning.srv import MapGraph
-from pyproj import Proj, transform
-# from Graph import Node, Link  # Import the custom Node and Link classes
 from path_planning.msg import GraphMsg, Node, NodeArray, Link, LinkArray
 
 def load_node_from_json(json_node):
@@ -79,10 +77,23 @@ def graph_response(req):
     except Exception as e:
         rospy.logerr("Failed to process file %s: %s", req.file_path, str(e))
 
+def marker_response(req):
+    rospy.loginfo("Processing file: %s", req.file_path)
+    try:
+        marker_array, ref_x, ref_y, ref_z = parse_json_and_visualize(req.file_path, (0.0, 0.0, 0.0))
+
+        marker_pub = rospy.Publisher('visualization_marker_array', MarkerArray, queue_size=10, latch=True)
+
+        marker_pub.publish(marker_array)
+
+    except Exception as e:
+        rospy.logerr("Failed to process file %s: %s", req.file_path, str(e))
+
 
 def multi_type_response_server():
     rospy.init_node('map_server')
     rospy.Service('map_server', MapGraph, graph_response)
+    rospy.Service('map_display_server', DisplayMarkerMap, marker_response)
     rospy.spin()
 
 

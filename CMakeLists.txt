@@ -58,6 +58,7 @@ add_service_files(
   FILES
   CreateGraph.srv
   MapGraph.srv
+  DisplayMarkerMap.srv
 )
 
 ## Generate actions in the 'action' folder
