@@ -45,9 +45,17 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
             std::cout << map_srv.response.map_graph.node_array.nodes[0].ID << std::endl; // cout for debug
             //graph_ = map_srv.response.map_graph;
             //ndarr_ = map_srv.response.map_graph.node_array;
+            bool initMapcoord = false;
 
             for (const auto &node : map_srv.response.map_graph.node_array.nodes) {
                 graph_.addNode(node.ID, node.Lat, node.Long, node.Easting, node.Northing);
+                if (!initMapcoord) {
+                    map_gps_coordinates_ = std::make_tuple(node.Lat, node.Long, node.Alt);
+                    map_utm_.first = node.Easting;
+                    map_utm_.second = node.Northing;
+                    utm_zone_ = node.Zone;
+                    initMapcoord = true;
+                }
             }
 
             for (const auto &link : map_srv.response.map_graph.link_array.links) {
@@ -120,16 +128,25 @@ bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geome
         std::cout << current_utm_.second << std::fixed << std::endl;
 
         GraphPlanner::Node start("Start", current_gps_.first, current_gps_.second, current_utm_.first, current_utm_.second);
-        GraphPlanner::Node goal("Goal", current_gps_.first + 100.0, current_gps_.second + 100.0, current_utm_.first + 10000.0, current_utm_.second + 10000.0);
+        goal_utm_.first = map_utm_.first + goal.pose.position.x;
+        goal_utm_.second = map_utm_.second + goal.pose.position.y;
+        utmToLatLon(goal_utm_.first, goal_utm_.second, goal_gps_.first, goal_gps_.second, utm_zone_);
+        GraphPlanner::Node goal("Goal", goal_gps_.first, goal_gps_.second, goal_utm_.first, goal_utm_.second);
 
         GraphPlanner::gpsPathfinder(start, goal, plan);
     }
     // Below code block is important.
     // If global plan failed, there are no data in vector(plan) and it occurs error to move_base Node
     // DO NOT DELETE theses lines!!!
-    plan.clear();
-    plan.push_back(start);
-    plan.push_back(goal);
-    return true;
+    if (plan.empty()) {
+        plan.clear();
+        plan.push_back(start);
+        plan.push_back(goal);
+        return true;
+    }
+    else {
+        std::cout << "planning.." << std::endl;
+        return true;
+    }
     // REAL
 }

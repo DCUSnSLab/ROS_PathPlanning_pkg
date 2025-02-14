@@ -97,13 +97,14 @@ namespace graph_planner {
         bool initialized_ = false;
         bool arrived_;
 
-        std::pair<double, double> origin_utm_;      // UTM 좌표 원점 (x, y)
+        std::tuple<double, double, double> map_gps_coordinates_;  // first node's Coordinate in map data
+        std::pair<double, double> map_utm_;  // same but UTM
+
         std::pair<double, double> current_gps_;
         std::pair<double, double> current_utm_;
+        std::pair<double, double> goal_gps_;
+        std::pair<double, double> goal_utm_;
         std::pair<double, double> waypoint_relative_utm_;  // 상대 UTM 좌표 (x, y)
-
-        std::tuple<double, double, double> map_gps_coordinates_;  // (위도, 경도, 고도)
-        std::pair<double, double> map_utm_;  // (x, y)
 
         std::vector<path_planning::Node> nodes_;
         std::vector<path_planning::Link> links_;
@@ -200,8 +201,10 @@ namespace graph_planner {
 
             // 경로 재구성
             std::vector<string> path;
-            for (string at = goal_id; parent.find(at) != parent.end(); at = parent[at])
+            for (string at = goal_id; parent.find(at) != parent.end(); at = parent[at]) {
                 path.push_back(at);
+                std::cout << at << std::endl;
+            }
 
             if (!path.empty()) path.push_back(start_id);
             std::reverse(path.begin(), path.end());
@@ -253,18 +256,35 @@ namespace graph_planner {
                     }
                 }
 
-                // 경로 재구성
                 std::vector<string> path;
-                for (string at = goal_id; parent.find(at) != parent.end(); at = parent[at])
+                for (string at = goal_id; parent.find(at) != parent.end(); at = parent[at]) {
                     path.push_back(at);
+                }
 
-                while (!pq.empty()) {
-                    AStarNode current = pq.top();
-                    pq.pop();
+                std::reverse(path.begin(), path.end());
 
-                    ROS_INFO("Processing Node ID: %s", current.id.c_str());
-                    ROS_INFO("Latitude: %f, Longitude: %f", current.lat, current.lon);
-                    ROS_INFO("Easting: %f, Northing: %f", current.easting, current.northing);
+                std::cout << "before PG" << std::endl;
+
+                ros::Time current_time = ros::Time::now();
+                Node const *tmp;
+
+                for (size_t i = 0; i < path.size(); i++) {
+                    tmp = graph_.getNode(path[i]);
+
+                    std::cout << tmp->getID() << " ";
+                    std::cout << tmp->getLat() << " ";
+                    std::cout << tmp->getLon() << std::endl;
+
+                    geometry_msgs::PoseStamped pose;
+                    pose.header.stamp = current_time;
+                    pose.header.frame_id = "map";  // 좌표계 설정
+
+                    pose.pose.position.x = tmp->getEasting();  // x 좌표
+                    pose.pose.position.y = tmp->getNorthing(); // y 좌표
+                    pose.pose.position.z = 0.0;  // 기본값으로 z=0 설정
+
+                    pose.pose.orientation.w = 1.0;  // 기본적으로 방향 설정 (회전 없음)
+                    plan.push_back(pose);
                 }
             }
         }
@@ -309,6 +329,55 @@ namespace graph_planner {
 
             utm_zone = std::to_string(zone) + (north ? "N" : "S");
         }
+
+        void utmToLatLon(double utm_x, double utm_y, double &lat, double &lon, const std::string& utm_zone) {
+            std::pair<double, double> tmp;
+            int zone = std::stoi(utm_zone.substr(0, utm_zone.size() - 1));  // 숫자 부분 (예: "52N" → 52)
+            bool north = (utm_zone.back() == 'N'); // 북반구 여부 확인
+
+            double a = 6378137.0; // WGS84 타원체 반경
+            double f = 1 / 298.257223563;
+            double k0 = 0.9996;
+            double e = std::sqrt(f * (2 - f));
+            double e1 = (1 - std::sqrt(1 - e * e)) / (1 + std::sqrt(1 - e * e));
+
+            // 중앙 경도 계산
+            double lambda0 = (zone - 1) * 6 - 180 + 3;
+
+            // 남반구 보정
+            if (!north) {
+                utm_y -= 10000000.0;
+            }
+
+            // 위도 계산
+            double M = utm_y / k0;
+            double mu = M / (a * (1 - e * e / 4 - 3 * e * e * e * e / 64 - 5 * e * e * e * e * e * e / 256));
+
+            double phi1 = mu + (3 * e1 / 2 - 27 * e1 * e1 * e1 / 32) * std::sin(2 * mu)
+                              + (21 * e1 * e1 / 16 - 55 * e1 * e1 * e1 * e1 / 32) * std::sin(4 * mu)
+                              + (151 * e1 * e1 * e1 / 96) * std::sin(6 * mu)
+                              + (1097 * e1 * e1 * e1 * e1 / 512) * std::sin(8 * mu);
+
+            double N1 = a / std::sqrt(1 - e * e * std::sin(phi1) * std::sin(phi1));
+            double T1 = std::tan(phi1) * std::tan(phi1);
+            double C1 = (e * e / (1 - e * e)) * std::cos(phi1) * std::cos(phi1);
+            double R1 = a * (1 - e * e) / std::pow(1 - e * e * std::sin(phi1) * std::sin(phi1), 1.5);
+            double D = (utm_x - 500000.0) / (N1 * k0);
+
+            // 최종 위도 계산
+            lat = phi1 - (N1 * std::tan(phi1) / R1) *
+                  (D * D / 2 - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * (e * e / (1 - e * e))) * D * D * D * D / 24
+                   + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * (e * e / (1 - e * e)) - 3 * C1 * C1) * D * D * D * D * D * D / 720);
+
+            lat = lat * 180.0 / M_PI; // 라디안을 도(degree)로 변환
+
+            // 최종 경도 계산
+            lon = lambda0 + (D - (1 + 2 * T1 + C1) * D * D * D / 6
+                   + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * (e * e / (1 - e * e)) + 24 * T1 * T1) * D * D * D * D * D / 120) / std::cos(phi1);
+
+            lon = lon * 180.0 / M_PI; // 라디안을 도(degree)로 변환
+        }
+
         void gpsPathfinder(Node& start, Node& goal, std::vector<geometry_msgs::PoseStamped>& plan) {
             /*
             Load the path from the current location to the target point into the PoseStamped message vector.
@@ -327,11 +396,9 @@ namespace graph_planner {
             // graph_.addLink(goal.getID(), goal_near, 0.5);
             graph_.addLink(goal_near, goal.getID(), 0.1);
 
-            // std::vector<string> path = findPath(graph_, start.getID(), goal.getID());
-
             // find path in graph
-            // findPath(graph_, start.getID(), goal.getID(), plan);
-            findPath(graph_, "N0000", "N0028", plan);
+            // findPath(graph_, "N0000", "N0028", plan);
+            findPath(graph_, start.getID(), goal.getID(), plan);
 
             std::cout << "Path finder called." << std::endl;
         }
