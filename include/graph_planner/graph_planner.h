@@ -100,12 +100,15 @@ namespace graph_planner {
 
         path_planning::MapGraph map_srv;
 
+        string file_path_ = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
+
 
         ros::ServiceClient mapservice_ = private_nh_.serviceClient<path_planning::MapGraph>("/map_server");
         ros::ServiceClient mapdisplayservice_ = private_nh_.serviceClient<path_planning::DisplayMarkerMap>("/map_display_server");
 
         bool initialized_ = false;
         bool arrived_;
+        bool goalinit_ = false;
         bool mapinit_ = false;
 
         /*
@@ -403,12 +406,12 @@ namespace graph_planner {
 
             // find nearest node from start
             string start_near = findClosestNode(start.getLat(), start.getLon());
-            std::cout << "start_near" << std::endl;
-            std::cout << start_near << std::endl;
+            //std::cout << "start_near" << std::endl;
+            //std::cout << start_near << std::endl;
             // find nearest node from goal
             string goal_near = findClosestNode(goal.getLat(), goal.getLon());
-            std::cout << "goal_near" << std::endl;
-            std::cout << goal_near << std::endl;
+            //std::cout << "goal_near" << std::endl;
+            //std::cout << goal_near << std::endl;
 
             graph_.addNode(start);
             graph_.addNode(goal);
@@ -420,11 +423,11 @@ namespace graph_planner {
             // findPath(graph_, "N0000", "N0028", plan);
             findPath(graph_, start.getID(), goal.getID(), plan);
 
-            std::cout << "Path finder called." << std::endl;
+            //std::cout << "Path finder called." << std::endl;
         }
 
         void Callgraph() {
-            map_srv.request.file_path = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
+            map_srv.request.file_path = file_path_;
 
             if (mapservice_.call(map_srv)) {
                 ROS_INFO("success");
@@ -459,7 +462,7 @@ namespace graph_planner {
 
         void DisplayMap() {
             path_planning::DisplayMarkerMap map_display_srv;
-            map_display_srv.request.file_path = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
+            map_display_srv.request.file_path = file_path_;
 
 //            map_display_srv.request.correction_val.x = current_utm_.first + origin_utm_.first - (map_utm_.first * 2);
 //            map_display_srv.request.correction_val.y = current_utm_.second + origin_utm_.second - (map_utm_.second * 2);
