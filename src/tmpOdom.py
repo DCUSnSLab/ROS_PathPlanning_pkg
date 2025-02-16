@@ -74,9 +74,9 @@ class OdomPublisher:
             self.publish_tf("odom", "base_link", 0, 0, 0, 0, 0, 0, 1)
 
             # base_link -> velodyne, gps, imu (고정된 변환)
-            self.publish_tf("base_link", "velodyne", 0.5, 0.0, 1.2, 0, 0, 0, 1)
-            self.publish_tf("base_link", "gps", -0.2, 0.0, 1.5, 0, 0, 0, 1)
-            self.publish_tf("base_link", "imu", 0.0, 0.0, 1.0, 0, 0, 0, 1)
+            self.publish_tf("base_link", "velodyne", 0.75, 0, 0.9, 0, 0, 0, 1)
+            self.publish_tf("base_link", "gps", 0.7, 0.0, 0.9, 0, 0, 0, 1)
+            self.publish_tf("base_link", "imu", 0.65, 0.0, 0.9, 0, 0, 0, 1)
 
             # Odometry 메시지 생성 및 발행
             odom = Odometry()

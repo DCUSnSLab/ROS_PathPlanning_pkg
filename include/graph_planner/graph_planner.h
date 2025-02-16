@@ -77,6 +77,11 @@ namespace graph_planner {
                 nodes[id] = Node(id, lat, lon, easting, northing);
             }
 
+            void removeStartGoalNode() {
+                nodes.erase("Start");
+                nodes.erase("Goal");
+            }
+
             void addLink(const string& from_id, const string& to_id, double weight) {
                 if (nodes.find(from_id) != nodes.end() && nodes.find(to_id) != nodes.end()) {
                     nodes[from_id].addNeighbor(to_id, weight);
@@ -101,6 +106,7 @@ namespace graph_planner {
         path_planning::MapGraph map_srv;
 
         string file_path_ = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
+        //string file_path_ = "/home/ros/20250216_dense_k-city.json";
 
 
         ros::ServiceClient mapservice_ = private_nh_.serviceClient<path_planning::MapGraph>("/map_server");
@@ -412,6 +418,9 @@ namespace graph_planner {
             string goal_near = findClosestNode(goal.getLat(), goal.getLon());
             //std::cout << "goal_near" << std::endl;
             //std::cout << goal_near << std::endl;
+
+            // Remove previous start, goal node
+            graph_.removeStartGoalNode();
 
             graph_.addNode(start);
             graph_.addNode(goal);

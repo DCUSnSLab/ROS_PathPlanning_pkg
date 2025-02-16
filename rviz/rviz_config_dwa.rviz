@@ -13,7 +13,8 @@ Panels:
         - /PointCloud23
         - /Path1
         - /Path2
-      Splitter Ratio: 0.5
+        - /TF1
+      Splitter Ratio: 0.42352941632270813
     Tree Height: 607
   - Class: rviz/Selection
     Name: Selection
@@ -245,7 +246,7 @@ Visualization Manager:
         velodyne:
           Value: true
       Marker Alpha: 1
-      Marker Scale: 1
+      Marker Scale: 5
       Name: TF
       Show Arrows: true
       Show Axes: true
@@ -290,7 +291,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 9.56518840789795
+      Distance: 89.37110900878906
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -306,9 +307,9 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.1247961521148682
+      Pitch: 1.424796462059021
       Target Frame: base_link
-      Yaw: 5.638599872589111
+      Yaw: 3.8067758083343506
     Saved: ~
 Window Geometry:
   Displays:

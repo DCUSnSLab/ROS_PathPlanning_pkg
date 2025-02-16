@@ -55,7 +55,10 @@ class TwistTo4WD:
         # PID 컨트롤러 초기화 (속도 및 조향)
         self.speed_pid = PIDController(Kp=1.0, Ki=0.1, Kd=0.05)   # 속도 PID (튜닝 가능)
         #self.steering_pid = PIDController(Kp=0.5, Ki=0.01, Kd=0.02)  # 조향 PID (튜닝 가능)
-        self.steering_pid = PIDController(Kp=0.3, Ki=0.01, Kd=0.04)  # 조향 PID (튜닝 가능)
+        self.steering_pid = PIDController(Kp=1.0, Ki=0.3, Kd=0.0025)
+
+        #self.speed_pid = PIDController(Kp=1.0, Ki=0.1, Kd=0.05)  # pid clac for DWA local planner
+        #self.steering_pid = PIDController(Kp=0.7, Ki=0.5, Kd=0.05)
 
     def cmd_vel_callback(self, msg):
         """ Twist 메시지를 받아 차량 제어 명령을 생성 """
@@ -63,6 +66,7 @@ class TwistTo4WD:
 
         # 목표 속도 설정
         target_speed = msg.linear.x
+
         self.current_speed += self.speed_pid.compute(target_speed, self.current_speed)  # PID 기반 속도 제어
 
         # 목표 조향각 계산 (Ackermann 모델 적용)
@@ -79,8 +83,14 @@ class TwistTo4WD:
         normalized_steering = self.current_steering / self.max_steering_angle
         normalized_steering = max(min(normalized_steering, 1.0), -1.0)
 
-        ctrl_cmd.steering = normalized_steering
-        ctrl_cmd.accel = max(min(self.current_speed / self.max_speed, 1.0), -1.0)  # -1 ~ 1 범위 유지
+        ctrl_cmd.longlCmdType = 0
+        #ctrl_cmd.accel = max(min(self.current_speed / self.max_speed, 1.0), -1.0)  # -1 ~ 1 범위 유지
+        ctrl_cmd.accel = msg.linear.x
+        ctrl_cmd.steering = msg.angular.z
+
+        #ctrl_cmd.steering = normalized_steering # longlCmdType = 0
+        #ctrl_cmd.acceleration = max(min(self.current_speed / self.max_speed, 1.0), -1.0) # longlcmdtype 1?
+        #ctrl_cmd.velocity = max(min(self.current_speed / self.max_speed, 1.0), -1.0) # longlcmdtype 2
 
         # 제어 명령 발행
         self.control_pub.publish(ctrl_cmd)
