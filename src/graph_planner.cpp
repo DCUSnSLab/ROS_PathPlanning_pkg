@@ -45,6 +45,7 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
 }
 
 bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geometry_msgs::PoseStamped& goal,  std::vector<geometry_msgs::PoseStamped>& plan) {
+    plan.clear();
     if (!initialized_) {
         std::cout << "Global Planner is not initialized" << std::endl;
         ROS_ERROR("Global Planner is not initialized");
@@ -54,7 +55,7 @@ bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geome
         plan.push_back(goal);
         return true;
     }
-    else {
+
 //        if (goal.header.stamp.toSec() > 0) {
 //            std::cout << "wait new goal" << std::endl;
 //        }
@@ -95,23 +96,25 @@ bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geome
 //        ROS_INFO("  - z: %f", goal.pose.orientation.z);
 //        ROS_INFO("  - w: %f", goal.pose.orientation.w);
 //        else {
-        if (goalinit_ == false) {
-            string start_id = "Start";
-            string goal_id = "Goal";
-            ROS_DEBUG("This is test output(makeplan)");
-
-            GraphPlanner::Node start("Start", current_gps_.first, current_gps_.second, current_utm_.first, current_utm_.second);
-            goal_utm_.first = map_utm_.first + goal.pose.position.x;
-            goal_utm_.second = map_utm_.second + goal.pose.position.y;
-            utmToLatLon(goal_utm_.first, goal_utm_.second, goal_gps_.first, goal_gps_.second, utm_zone_);
-            GraphPlanner::Node goal("Goal", goal_gps_.first, goal_gps_.second, goal_utm_.first, goal_utm_.second);
-
-            GraphPlanner::gpsPathfinder(start, goal, plan);
-
-                // std::cout << "planning.." << std::endl;
-            goalinit_ = true;
-        }
-        return true;
+    if (std::isnan(goal.pose.position.x) || std::isnan(goal.pose.position.y)) {
+        return false;
     }
-    // REAL
+
+    graph_.removeStartGoalNode();
+
+    string start_id = "Start";
+    string goal_id = "Goal";
+    ROS_DEBUG("This is test output(makeplan)");
+
+    GraphPlanner::Node start_node("Start", current_gps_.first, current_gps_.second, current_utm_.first, current_utm_.second);
+    goal_utm_.first = map_utm_.first + goal.pose.position.x;
+    goal_utm_.second = map_utm_.second + goal.pose.position.y;
+    utmToLatLon(goal_utm_.first, goal_utm_.second, goal_gps_.first, goal_gps_.second, utm_zone_);
+    GraphPlanner::Node goal_node("Goal", goal_gps_.first, goal_gps_.second, goal_utm_.first, goal_utm_.second);
+
+    GraphPlanner::gpsPathfinder(start_node, goal_node, plan);
+
+        // std::cout << "planning.." << std::endl;
+    goalinit_ = true;
+    return true;
 }
