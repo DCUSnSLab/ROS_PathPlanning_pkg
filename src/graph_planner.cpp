@@ -102,6 +102,8 @@ bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geome
 
     graph_.removeStartGoalNode();
 
+    std::cout << "New goal init" << std::endl;
+
     string start_id = "Start";
     string goal_id = "Goal";
     ROS_DEBUG("This is test output(makeplan)");

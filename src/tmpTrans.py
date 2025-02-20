@@ -86,6 +86,8 @@ class TwistTo4WD:
         ctrl_cmd.longlCmdType = 0
         #ctrl_cmd.accel = max(min(self.current_speed / self.max_speed, 1.0), -1.0)  # -1 ~ 1 범위 유지
         ctrl_cmd.accel = msg.linear.x
+        #ctrl_cmd.velocity = msg.linear.x
+        #ctrl_cmd.acceleration = msg.linear.x
         ctrl_cmd.steering = msg.angular.z
 
         #ctrl_cmd.steering = normalized_steering # longlCmdType = 0
