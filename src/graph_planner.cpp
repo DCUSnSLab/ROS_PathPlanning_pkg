@@ -34,7 +34,7 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
 
         gps_sub_ = private_nh_.subscribe("/gps", 10, &GraphPlanner::gpsCallback, this);
 
-        private_nh_.getParam("MAP_FILE", file_path_);
+        private_nh_.getParam("map_file", file_path_);
 
         std::cout << file_path_ << std::endl;
 
