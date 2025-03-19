@@ -9,6 +9,7 @@
 #include <costmap_2d/costmap_2d.h>
 #include <nav_core/base_global_planner.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Point.h>
 #include <angles/angles.h>
 #include <base_local_planner/world_model.h>
 #include <base_local_planner/costmap_model.h>
@@ -18,6 +19,7 @@
 #include <tuple>
 #include <iostream>
 #include <cmath>
+#include <eigen3/Eigen/Dense>
 
 #include "ros/ros.h"
 
@@ -105,9 +107,8 @@ namespace graph_planner {
 
         path_planning::MapGraph map_srv;
 
-        string file_path_ = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
-        //string file_path_ = "/home/ros/20250216_dense_k-city.json";
-
+        // string file_path_ = "/home/ros/SCV2/src/scv_system/global_path/ROS_PathPlanning_pkg/data/graph(map)/20250115_k-city.json";
+        string file_path_ = "";
 
         ros::ServiceClient mapservice_ = private_nh_.serviceClient<path_planning::MapGraph>("/map_server");
         ros::ServiceClient mapdisplayservice_ = private_nh_.serviceClient<path_planning::DisplayMarkerMap>("/map_display_server");
@@ -123,7 +124,8 @@ namespace graph_planner {
         Do it that way first and modify it later.
         */
         std::tuple<double, double, double> origin_gps_coordinates_ = std::make_tuple(37.23923857150045, 126.7731611307903, 28.940864029884338);  // origin coord
-        std::pair<double, double> origin_utm_ = std::make_pair(302473.690, 4123735.933);  //
+        // std::pair<double, double> origin_utm_ = std::make_pair(302473.690, 4123735.933);
+        std::pair<double, double> origin_utm_;
 
         std::tuple<double, double, double> map_gps_coordinates_;  // first node's Coordinate in map data
         std::pair<double, double> map_utm_;  // same but UTM
@@ -132,6 +134,9 @@ namespace graph_planner {
         std::pair<double, double> current_utm_;
         std::pair<double, double> goal_gps_;
         std::pair<double, double> goal_utm_;
+
+        std::vector<geometry_msgs::Point> gps_points;
+        bool first_point = true;
 
         std::pair<double, double> rviz_correction_;
 
@@ -435,6 +440,70 @@ namespace graph_planner {
             //std::cout << "Path finder called." << std::endl;
         }
 
+        void Umeyama() {
+            // 1. 대응점 데이터 설정 (A 좌표계의 점들)
+            Eigen::MatrixXd X(3, 2);
+            X << 2, 3,
+                 4, 5,
+                 3, 7;
+
+            // 2. B 좌표계의 대응 점들 생성
+            //    (예제에서는 A 좌표계의 점들에 대해,
+            //     스케일 1.5, 회전 30도, 평행이동 (1, -2)를 적용했다고 가정)
+            double theta = M_PI / 6; // 30도 (라디안 단위)
+            double s_true = 1.5;
+            Eigen::Vector2d t_true(1, -2);
+
+            Eigen::Matrix2d R_true;
+            R_true << cos(theta), -sin(theta),
+                      sin(theta),  cos(theta);
+
+            Eigen::MatrixXd Y(3, 2);
+            for (int i = 0; i < X.rows(); i++) {
+                Eigen::Vector2d xi = X.row(i);
+                // B 좌표계: Y = s_true * (R_true * xi) + t_true
+                Eigen::Vector2d yi = s_true * (R_true * xi) + t_true;
+                Y.row(i) = yi;
+            }
+
+            // 3. Umeyama 알고리즘을 통한 변환 파라미터 추정
+
+            // (a) 각 좌표계의 중심(centroid) 계산
+            Eigen::Vector2d mu_X = X.colwise().mean();
+            Eigen::Vector2d mu_Y = Y.colwise().mean();
+
+            // (b) 각 점들을 중심화 (centered coordinates)
+            Eigen::MatrixXd Xc = X.rowwise() - mu_X.transpose();
+            Eigen::MatrixXd Yc = Y.rowwise() - mu_Y.transpose();
+
+            // (c) 공분산 행렬 계산: Sigma = (Yc^T * Xc) / N
+            Eigen::Matrix2d Sigma = (Yc.transpose() * Xc) / X.rows();
+
+            // (d) SVD 분해: Sigma = U * D * V^T
+            Eigen::JacobiSVD<Eigen::Matrix2d> svd(Sigma, Eigen::ComputeFullU | Eigen::ComputeFullV);
+            Eigen::Matrix2d U = svd.matrixU();
+            Eigen::Matrix2d V = svd.matrixV();
+            Eigen::Vector2d D = svd.singularValues();
+
+            // (e) 회전 행렬 결정
+            double d = (U.determinant() * V.determinant());
+            Eigen::Matrix2d S = Eigen::Matrix2d::Identity();
+            S(1, 1) = d;
+            Eigen::Matrix2d R_est = U * S * V.transpose();
+
+            // (f) 스케일 팩터 결정
+            double var_X = (Xc.array().square().sum()) / X.rows();
+            double s_est = (D.dot(S.diagonal())) / var_X;
+
+            // (g) 평행 이동 (translation) 추정
+            Eigen::Vector2d t_est = mu_Y - s_est * R_est * mu_X;
+
+            // 4. 결과 출력
+            std::cout << "Estimated Scale: " << s_est << std::endl;
+            std::cout << "Estimated Rotation Matrix:\n" << R_est << std::endl;
+            std::cout << "Estimated Translation: " << t_est.transpose() << std::endl;
+        }
+
         void Callgraph() {
             map_srv.request.file_path = file_path_;
 
@@ -492,9 +561,35 @@ namespace graph_planner {
             }
         }
 
+        double distance2D(const geometry_msgs::Point &a, const geometry_msgs::Point &b) {
+            return std::sqrt((a.x - b.x) * (a.x - b.x) +
+                             (a.y - b.y) * (a.y - b.y));
+        }
+
         void gpsCallback(const morai_msgs::GPSMessage::ConstPtr& msg) {
             current_gps_.first = msg->latitude;
             current_gps_.second = msg->longitude;
+
+            /*
+            store gps coord for coordinate registration
+            */
+
+            geometry_msgs::Point tmp;
+            tmp.x = current_gps_.first;
+            tmp.y = current_gps_.second;
+
+            if(first_point) {
+                gps_points.push_back(tmp);
+                first_point = false;
+            }
+            else {
+                const geometry_msgs::Point &last_point = gps_points.back();
+                double dist = distance2D(tmp, last_point);
+                if (dist >= 0.1) {
+                    gps_points.push_back(tmp);
+                }
+            }
+
             latLonToUtm(msg->latitude, msg->longitude, current_utm_.first, current_utm_.second, utm_zone_);
             if (!mapinit_) {
                 DisplayMap();

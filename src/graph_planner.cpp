@@ -36,6 +36,9 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
 
         private_nh_.getParam("map_file", file_path_);
 
+        private_nh_.getParam("reference_utm_x", origin_utm_.first);
+        private_nh_.getParam("reference_utm_y", origin_utm_.second);
+
         std::cout << file_path_ << std::endl;
 
         Callgraph();

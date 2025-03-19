@@ -4,9 +4,18 @@
 import json
 import rospy
 from path_planning.srv import MapGraph, DisplayMarkerMap
-from visualize_path import parse_json_and_visualize
+
 from visualization_msgs.msg import Marker, MarkerArray
 from path_planning.msg import GraphMsg, Node, NodeArray, Link, LinkArray
+
+import sys
+import rospkg
+
+rospack = rospkg.RosPack()
+package_path = rospack.get_path('path_planning')
+sys.path.append(package_path + "/src")
+
+from visualize_path import parse_json_and_visualize
 
 def load_node_from_json(json_node):
     node = Node()

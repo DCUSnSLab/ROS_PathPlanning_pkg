@@ -15,10 +15,22 @@ source devel/setup.bash
 catkin_make
 ```
 
-## Run example(in morai sim)
+## Ingredients
 
+- Map file
+  - Generate map file using the script below
+  - src/scv_system/global_path/ROS_PathPlanning_pkg/src/NodeCreator(with bag file).py
+- Set reference coordinates
+
+## Run example
+
+### Morai Sim
 - roslaunch rosbridge_server rosbridge_websocket.launch
-- roslaunch path_planning A*
+- rosrun path_planning MapServer.py
+- roslaunch teb_local_planner_tutorials plugin_test_dwa.launch
+- 
+
+### SCV
 
 ## Node and Topics
 
