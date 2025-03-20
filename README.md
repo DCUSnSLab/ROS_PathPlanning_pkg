@@ -20,7 +20,6 @@ catkin_make
 - Map file
   - Generate map file using the script below
   - src/scv_system/global_path/ROS_PathPlanning_pkg/src/NodeCreator(with bag file).py
-- Set reference coordinates
 
 ## Run example
 

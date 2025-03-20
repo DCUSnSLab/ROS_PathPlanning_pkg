@@ -69,7 +69,7 @@ def parse_json_and_visualize(file_path, correction_val):
         if from_node in node_positions and to_node in node_positions:
             line_marker = Marker()
             #line_marker.header.frame_id = "waypoint"
-            line_marker.header.frame_id = "map"
+            line_marker.header.frame_id = "gps_utm"
             line_marker.header.stamp = rospy.Time.now()
             line_marker.ns = "waypoint_visualization"
             line_marker.id = len(data["Node"]) + j
@@ -95,7 +95,7 @@ def parse_json_and_visualize(file_path, correction_val):
 def create_marker(marker_id, marker_type, position, scale, color):
     marker = Marker()
     #marker.header.frame_id = "waypoint"
-    marker.header.frame_id = "map"
+    marker.header.frame_id = "gps_utm"
     marker.header.stamp = rospy.Time.now()  # Ensures consistent timestamp
     marker.ns = "waypoint_visualization"
     marker.id = marker_id

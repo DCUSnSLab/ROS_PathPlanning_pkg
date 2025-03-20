@@ -302,7 +302,7 @@ namespace graph_planner {
 
                     geometry_msgs::PoseStamped pose;
                     pose.header.stamp = current_time;
-                    pose.header.frame_id = "map";  // 좌표계 설정
+                    pose.header.frame_id = "gps_utm";  // 좌표계 설정
 
 //                    pose.pose.position.x = tmp->getEasting();  // x 좌표
 //                    pose.pose.position.y = tmp->getNorthing(); // y 좌표
@@ -446,10 +446,15 @@ namespace graph_planner {
             if (mapservice_.call(map_srv)) {
                 ROS_INFO("success");
                 std::cout << "map service call" << std::endl;
+
+                std::cout << "testtest" << std::endl;
+
                 std::cout << map_srv.response.map_graph.node_array.nodes[0].ID << std::endl; // cout for debug
                 //graph_ = map_srv.response.map_graph;
                 //ndarr_ = map_srv.response.map_graph.node_array;
                 bool initMapcoord = false;
+
+                std::cout << "test3" << std::endl;
 
                 for (const auto &node : map_srv.response.map_graph.node_array.nodes) {
                     graph_.addNode(node.ID, node.Lat, node.Long, node.Easting, node.Northing);
@@ -462,9 +467,13 @@ namespace graph_planner {
                     }
                 }
 
+                std::cout << "test4" << std::endl;
+
                 for (const auto &link : map_srv.response.map_graph.link_array.links) {
                     graph_.addLink(link.FromNodeID, link.ToNodeID, link.Length);
                 }
+
+                std::cout << "test5" << std::endl;
 
                 ROS_INFO("Create map graph");
 
@@ -478,8 +487,15 @@ namespace graph_planner {
             path_planning::DisplayMarkerMap map_display_srv;
             map_display_srv.request.file_path = file_path_;
 
-            map_display_srv.request.correction_val.x = current_utm_.first;
-            map_display_srv.request.correction_val.y = current_utm_.second;
+            // map_display_srv.request.correction_val.x = current_utm_.first;
+            // map_display_srv.request.correction_val.y = current_utm_.second;
+            double x, y;
+
+            private_nh_.getParam("/init_position/x", x);
+            private_nh_.getParam("/init_position/y", y);
+
+            map_display_srv.request.correction_val.x = x;
+            map_display_srv.request.correction_val.y = y;
 
             map_display_srv.request.correction_val.z = 0.0; // alt
 
@@ -491,11 +507,17 @@ namespace graph_planner {
             }
         }
 
-        void gpsCallback(const morai_msgs::GPSMessage::ConstPtr& msg) {
-            current_gps_.first = msg->latitude;
-            current_gps_.second = msg->longitude;
+        // void gpsCallback(const morai_msgs::GPSMessage::ConstPtr& msg) {
+        void gpsCallback(const geometry_msgs::Point::ConstPtr& msg) {
+            // current_gps_.first = msg->latitude;
+            // current_gps_.second = msg->longitude;
 
-            latLonToUtm(msg->latitude, msg->longitude, current_utm_.first, current_utm_.second, utm_zone_);
+            current_utm_.first = msg->x;
+            current_utm_.second = msg->y;
+
+            // latLonToUtm(msg->latitude, msg->longitude, current_utm_.first, current_utm_.second, utm_zone_);
+
+            utmToLatLon(current_utm_.first, current_utm_.second, current_gps_.first, current_gps_.second, utm_zone_);
 
             if (!gpsinit_) {
                 init_gps_.first = current_gps_.first;

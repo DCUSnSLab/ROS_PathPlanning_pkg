@@ -32,13 +32,18 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
         std::cout << "This is test output(init)" << std::endl;
         ROS_DEBUG("This is test output(init)");
 
-        gps_sub_ = private_nh_.subscribe("/gps", 10, &GraphPlanner::gpsCallback, this);
+        // gps_sub_ = private_nh_.subscribe("/gps", 10, &GraphPlanner::gpsCallback, this);
+        gps_sub_ = private_nh_.subscribe("/current_utm_relative_position", 10, &GraphPlanner::gpsCallback, this);
 
         private_nh_.getParam("map_file", file_path_);
 
         std::cout << file_path_ << std::endl;
 
+        std::cout << "test1" << std::endl;
+
         Callgraph();
+
+        std::cout << "test2" << std::endl;
 
         initialized_ = true;
     }

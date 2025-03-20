@@ -165,7 +165,7 @@ def main():
         print("No output file selected. Exiting.")
         return
 
-    gps_topic = "/gps"  # You can change this as needed
+    gps_topic = "/ublox_gps/fix"  # You can change this as needed
 
     print("Extracting GPS data from rosbag...")
     gps_data = extract_gps_from_bag(bag_file, gps_topic)
