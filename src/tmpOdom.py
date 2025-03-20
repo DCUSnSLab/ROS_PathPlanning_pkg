@@ -15,9 +15,8 @@ class OdomPublisher:
     def __init__(self):
         rospy.init_node('odom_publisher', anonymous=True)
 
-        # 지도 기준 GPS 좌표 (Lat, Long, Alt)
-        self.map_gps_coordinates = (37.23923857150045, 126.7731611307903, 0)
-        self.map_utm = utm.from_latlon(self.map_gps_coordinates[0], self.map_gps_coordinates[1])
+        self.init_gps_coordinates = None
+        self.init_utm = None
 
         self.odom_pub = rospy.Publisher("/odom/coordinate", Odometry, queue_size=10)
         self.br = tf2_ros.TransformBroadcaster()
@@ -32,11 +31,14 @@ class OdomPublisher:
         self.run()
 
     def gps_callback(self, msg):
+        if self.init_utm == None:
+            self.init_gps_coordinates = (msg.latitude, msg.longitude)
+            self.init_utm = utm.from_latlon(self.init_gps_coordinates[0], self.init_gps_coordinates[1])
         """GPS 데이터를 UTM 좌표로 변환하여 저장"""
         current_utm = utm.from_latlon(msg.latitude, msg.longitude)
         self.gps_data = (
-            current_utm[0] - self.map_utm[0],
-            current_utm[1] - self.map_utm[1],
+            current_utm[0] - self.init_utm[0],
+            current_utm[1] - self.init_utm[1],
             msg.altitude
         )
 

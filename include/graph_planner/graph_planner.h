@@ -307,11 +307,11 @@ namespace graph_planner {
                     pose.header.stamp = current_time;
                     pose.header.frame_id = "map";  // 좌표계 설정
 
-//                    pose.pose.position.x = tmp->getEasting();  // x 좌표
-//                    pose.pose.position.y = tmp->getNorthing(); // y 좌표
+                    pose.pose.position.x = tmp->getEasting();  // x 좌표
+                    pose.pose.position.y = tmp->getNorthing(); // y 좌표
 
-                    pose.pose.position.x = tmp->getEasting() - origin_utm_.first;  // x 좌표
-                    pose.pose.position.y = tmp->getNorthing() - origin_utm_.second; // y 좌표
+//                    pose.pose.position.x = tmp->getEasting() - origin_utm_.first;  // x 좌표
+//                    pose.pose.position.y = tmp->getNorthing() - origin_utm_.second; // y 좌표
 
                     pose.pose.position.z = 0.0;  // 기본값으로 z=0 설정
 
@@ -542,11 +542,8 @@ namespace graph_planner {
             path_planning::DisplayMarkerMap map_display_srv;
             map_display_srv.request.file_path = file_path_;
 
-//            map_display_srv.request.correction_val.x = current_utm_.first + origin_utm_.first - (map_utm_.first * 2);
-//            map_display_srv.request.correction_val.y = current_utm_.second + origin_utm_.second - (map_utm_.second * 2);
-
-            map_display_srv.request.correction_val.x = origin_utm_.first;
-            map_display_srv.request.correction_val.y = origin_utm_.second;
+            map_display_srv.request.correction_val.x = current_utm_.first;
+            map_display_srv.request.correction_val.y = current_utm_.second;
 
             map_display_srv.request.correction_val.z = 0.0; // alt
 
