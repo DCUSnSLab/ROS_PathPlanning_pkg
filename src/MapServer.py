@@ -3,12 +3,19 @@
 
 import json
 import rospy
+from path_planning.srv import MapGraph, DisplayMarkerMap
+
 from visualization_msgs.msg import Marker, MarkerArray
-from geometry_msgs.msg import Point
-from path_planning.srv import MapGraph
-from pyproj import Proj, transform
-# from Graph import Node, Link  # Import the custom Node and Link classes
-from path_planning.msg import Graph, Node, NodeArray, Link, LinkArray
+from path_planning.msg import GraphMsg, Node, NodeArray, Link, LinkArray
+
+import sys
+import rospkg
+
+rospack = rospkg.RosPack()
+package_path = rospack.get_path('path_planning')
+sys.path.append(package_path + "/src")
+
+from visualize_path import parse_json_and_visualize
 
 def load_node_from_json(json_node):
     node = Node()
@@ -61,7 +68,7 @@ def load_graph_from_json(json_data):
     node_array.nodes = [load_node_from_json(node) for node in json_data["Node"]]
     link_array.links = [load_link_from_json(link) for link in json_data["Link"]]
 
-    graph = Graph()
+    graph = GraphMsg()
     graph.node_array = node_array
     graph.link_array = link_array
     return graph
@@ -79,10 +86,26 @@ def graph_response(req):
     except Exception as e:
         rospy.logerr("Failed to process file %s: %s", req.file_path, str(e))
 
+def marker_response(req):
+    rospy.loginfo("Processing file: %s", req.file_path)
+    try:
+        marker_array, ref_x, ref_y, ref_z = parse_json_and_visualize(req.file_path, (req.correction_val.x, req.correction_val.y, req.correction_val.z))
+
+        marker_pub = rospy.Publisher('visualization_marker_array', MarkerArray, queue_size=10, latch=True)
+
+        marker_pub.publish(marker_array)
+
+        return True
+
+    except Exception as e:
+        rospy.logerr("Failed to process file %s: %s", req.file_path, str(e))
+        return False
+
 
 def multi_type_response_server():
     rospy.init_node('map_server')
     rospy.Service('map_server', MapGraph, graph_response)
+    rospy.Service('map_display_server', DisplayMarkerMap, marker_response)
     rospy.spin()
 
 

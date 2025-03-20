@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import rospy
 import math
 import numpy as np
@@ -27,7 +27,8 @@ class PurePursuit:
 
         self.lookahead_distance = rospy.get_param('~lookahead_distance', 2.5)
 
-        self.path_receiver()
+        self.path_sub = rospy.Subscriber('/planned_path', Path, self.path_callback, queue_size=1)
+        # self.path_receiver()
     def path_receiver(self):
         topic = "/planned_path"
         rospy.loginfo(f"Waiting for a message on {topic}...")
@@ -51,15 +52,18 @@ class PurePursuit:
     def visualize_lookahead(self, lookahead_point):
         """Visualize the lookahead point in RViz."""
         marker = Marker()
+        # marker.header.frame_id = "base_link"
         marker.header.frame_id = "map"
         marker.header.stamp = rospy.Time.now()
         marker.ns = "lookahead_point"
         marker.id = 0
         marker.type = Marker.SPHERE
         marker.action = Marker.ADD
-        marker.pose.position.x = lookahead_point.x
-        marker.pose.position.y = lookahead_point.y
-        marker.pose.position.z = 35 # temp val
+        marker.pose.position.x = lookahead_point.x - self.current_pose.pose.position.x
+        marker.pose.position.y = lookahead_point.y - self.current_pose.pose.position.y
+        #marker.pose.position.x = lookahead_point.x
+        #marker.pose.position.y = lookahead_point.y
+        marker.pose.position.z = 0 # temp val
         marker.scale.x = 1.5
         marker.scale.y = 1.5
         marker.scale.z = 1.5
@@ -118,24 +122,43 @@ class PurePursuit:
         return steering_angle
 
     def find_lookahead_point(self):
-        """Find the lookahead point based on purepursuit.py logic."""
+        """Find the lookahead point based on Pure Pursuit logic with interpolation."""
         if not self.path or self.current_pose is None:
             return None
 
         current_x = self.current_pose.pose.position.x
         current_y = self.current_pose.pose.position.y
 
-        for i, pose in enumerate(self.path):
-            dx = pose.x - current_x
-            dy = pose.y - current_y
-            distance = math.sqrt(dx ** 2 + dy ** 2)
+        # 순차적으로 경로를 탐색하며 Lookahead 거리 확인
+        for i in range(len(self.path) - 1):
+            p1 = self.path[i]
+            p2 = self.path[i + 1]
 
-            if distance >= self.lookahead_distance:
-                # Remove passed waypoints
+            # 두 점 사이 거리 계산
+            dx1 = p1.x - current_x
+            dy1 = p1.y - current_y
+            d1 = math.sqrt(dx1 ** 2 + dy1 ** 2)
+
+            dx2 = p2.x - current_x
+            dy2 = p2.y - current_y
+            d2 = math.sqrt(dx2 ** 2 + dy2 ** 2)
+
+            # Lookahead 거리가 p1과 p2 사이에 있는 경우 보간
+            if d1 < self.lookahead_distance and d2 >= self.lookahead_distance:
+                ratio = (self.lookahead_distance - d1) / (d2 - d1)
+                lookahead_x = p1.x + ratio * (p2.x - p1.x)
+                lookahead_y = p1.y + ratio * (p2.y - p1.y)
+
+                lookahead_point = Point()
+                lookahead_point.x = lookahead_x
+                lookahead_point.y = lookahead_y
+                lookahead_point.z = 0.0  # 지면 적용을 위한 기본값
+
+                # 지나간 경로 삭제
                 self.path = self.path[i:]
-                return pose
+                return lookahead_point
 
-        return None
+        return None  # Lookahead 거리 내에 점이 없을 경우 None 반환
 
     def map_steering_angle(self, value, from_min, from_max, to_min, to_max):
         """Map a value from one range to another while preserving the ratio."""

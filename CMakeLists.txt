@@ -50,14 +50,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 ## Generate messages in the 'msg' folder
 add_message_files(
-  FILES
-#   Message1.msg
-#   Message2.msg
-  Node.msg
-  Link.msg
-  NodeArray.msg
-  LinkArray.msg
-  Graph.msg
+    FILES Node.msg Link.msg NodeArray.msg LinkArray.msg GraphMsg.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -65,6 +58,7 @@ add_service_files(
   FILES
   CreateGraph.srv
   MapGraph.srv
+  DisplayMarkerMap.srv
 )
 
 ## Generate actions in the 'action' folder
@@ -113,9 +107,8 @@ generate_messages(
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES path_planning
-#  CATKIN_DEPENDS geomety_msgs nav_msgs rospy std_msgs
+    LIBRARIES path_planning
+    CATKIN_DEPENDS message_runtime geomety_msgs nav_msgs rospy std_msgs
 #  DEPENDS system_lib
 )
 
@@ -202,6 +195,8 @@ catkin_install_python(PROGRAMS
 #   # myfile2
 #   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 # )
+
+add_library(graph_planner_lib src/graph_planner.cpp)
 
 #############
 ## Testing ##
