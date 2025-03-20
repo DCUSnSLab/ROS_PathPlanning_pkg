@@ -36,9 +36,6 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
 
         private_nh_.getParam("map_file", file_path_);
 
-        private_nh_.getParam("reference_utm_x", origin_utm_.first);
-        private_nh_.getParam("reference_utm_y", origin_utm_.second);
-
         std::cout << file_path_ << std::endl;
 
         Callgraph();
@@ -59,51 +56,11 @@ bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geome
         return true;
     }
 
-//        if (goal.header.stamp.toSec() > 0) {
-//            std::cout << "wait new goal" << std::endl;
-//        }
-
-//        ROS_INFO("Header:");
-//        ROS_INFO("  - Seq: %d", start.header.seq);
-//        ROS_INFO("  - Stamp: %d.%d", (int)start.header.stamp.sec, (int)start.header.stamp.nsec);
-//        ROS_INFO("  - Frame ID: %s", start.header.frame_id.c_str());
-//
-//        // Position 정보
-//        ROS_INFO("Position:");
-//        ROS_INFO("  - x: %f", start.pose.position.x);
-//        ROS_INFO("  - y: %f", start.pose.position.y);
-//        ROS_INFO("  - z: %f", start.pose.position.z);
-//
-//        // Orientation 정보 (Quaternion)
-//        ROS_INFO("Orientation:");
-//        ROS_INFO("  - x: %f", start.pose.orientation.x);
-//        ROS_INFO("  - y: %f", start.pose.orientation.y);
-//        ROS_INFO("  - z: %f", start.pose.orientation.z);
-//        ROS_INFO("  - w: %f", start.pose.orientation.w);
-//
-//        ROS_INFO("Header:");
-//        ROS_INFO("  - Seq: %d", goal.header.seq);
-//        ROS_INFO("  - Stamp: %d.%d", (int)goal.header.stamp.sec, (int)goal.header.stamp.nsec);
-//        ROS_INFO("  - Frame ID: %s", goal.header.frame_id.c_str());
-//
-//        // Position 정보
-//        ROS_INFO("Position:");
-//        ROS_INFO("  - x: %f", goal.pose.position.x);
-//        ROS_INFO("  - y: %f", goal.pose.position.y);
-//        ROS_INFO("  - z: %f", goal.pose.position.z);
-//
-//        // Orientation 정보 (Quaternion)
-//        ROS_INFO("Orientation:");
-//        ROS_INFO("  - x: %f", goal.pose.orientation.x);
-//        ROS_INFO("  - y: %f", goal.pose.orientation.y);
-//        ROS_INFO("  - z: %f", goal.pose.orientation.z);
-//        ROS_INFO("  - w: %f", goal.pose.orientation.w);
-//        else {
     if (std::isnan(goal.pose.position.x) || std::isnan(goal.pose.position.y)) {
         return false;
     }
 
-    graph_.removeStartGoalNode();
+    graph_.removeStartGoalNode(); // Before planning a route, delete previous start and goal points.
 
     std::cout << "New goal init" << std::endl;
 
@@ -112,14 +69,31 @@ bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geome
     ROS_DEBUG("This is test output(makeplan)");
 
     GraphPlanner::Node start_node("Start", current_gps_.first, current_gps_.second, current_utm_.first, current_utm_.second);
-    goal_utm_.first = map_utm_.first + goal.pose.position.x;
-    goal_utm_.second = map_utm_.second + goal.pose.position.y;
+
+//    goal_utm_.first = map_utm_.first + goal.pose.position.x;
+//    goal_utm_.second = map_utm_.second + goal.pose.position.y;
+    goal_utm_.first = goal.pose.position.x + current_utm_.first;
+    goal_utm_.second = goal.pose.position.y + current_utm_.second;
+//    goal_utm_.first = current_utm_.first;
+//    goal_utm_.second = current_utm_.second;
+    std::cout << utm_zone_ << std::endl;
+
     utmToLatLon(goal_utm_.first, goal_utm_.second, goal_gps_.first, goal_gps_.second, utm_zone_);
     GraphPlanner::Node goal_node("Goal", goal_gps_.first, goal_gps_.second, goal_utm_.first, goal_utm_.second);
 
-    GraphPlanner::gpsPathfinder(start_node, goal_node, plan);
+    std::cout << goal_utm_.first << " " << goal_utm_.second << std::endl;
+    std::cout << current_utm_.first << " " << current_utm_.second << std::endl;
 
-        // std::cout << "planning.." << std::endl;
+    std::cout << goal_gps_.first << " " << goal_gps_.second << std::endl;
+    std::cout << current_gps_.first << " " << current_gps_.second << std::endl;
+
+    GraphPlanner::gpsPathfinder(start_node, goal_node, plan);
+    /*
+    gpsPathfinder()
+    In this function, a path search is performed between start_node and goal_node
+    and the generated path is loaded into the plan.
+    */
+
     goalinit_ = true;
     return true;
 }

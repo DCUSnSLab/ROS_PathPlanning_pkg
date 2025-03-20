@@ -117,26 +117,23 @@ namespace graph_planner {
         bool arrived_;
         bool goalinit_ = false;
         bool mapinit_ = false;
+        bool gpsinit_ = false;
 
         /*
         In order to accurately project a map based on relative coordinates,
         arbitrary reference coordinates are required.
         Do it that way first and modify it later.
         */
-        std::tuple<double, double, double> origin_gps_coordinates_ = std::make_tuple(37.23923857150045, 126.7731611307903, 28.940864029884338);  // origin coord
-        // std::pair<double, double> origin_utm_ = std::make_pair(302473.690, 4123735.933);
-        std::pair<double, double> origin_utm_;
 
         std::tuple<double, double, double> map_gps_coordinates_;  // first node's Coordinate in map data
         std::pair<double, double> map_utm_;  // same but UTM
 
+        std::pair<double, double> init_gps_;
+        std::pair<double, double> init_utm_;
         std::pair<double, double> current_gps_;
         std::pair<double, double> current_utm_;
         std::pair<double, double> goal_gps_;
         std::pair<double, double> goal_utm_;
-
-        std::vector<geometry_msgs::Point> gps_points;
-        bool first_point = true;
 
         std::pair<double, double> rviz_correction_;
 
@@ -307,11 +304,14 @@ namespace graph_planner {
                     pose.header.stamp = current_time;
                     pose.header.frame_id = "map";  // 좌표계 설정
 
-                    pose.pose.position.x = tmp->getEasting();  // x 좌표
-                    pose.pose.position.y = tmp->getNorthing(); // y 좌표
+//                    pose.pose.position.x = tmp->getEasting();  // x 좌표
+//                    pose.pose.position.y = tmp->getNorthing(); // y 좌표
 
-//                    pose.pose.position.x = tmp->getEasting() - origin_utm_.first;  // x 좌표
-//                    pose.pose.position.y = tmp->getNorthing() - origin_utm_.second; // y 좌표
+                    pose.pose.position.x = tmp->getEasting() - init_utm_.first;  // x 좌표
+                    pose.pose.position.y = tmp->getNorthing() - init_utm_.second; // y 좌표
+
+//                    pose.pose.position.x = init_utm_.first - tmp->getEasting();  // x 좌표
+//                    pose.pose.position.y = init_utm_.second - tmp->getNorthing(); // y 좌표
 
                     pose.pose.position.z = 0.0;  // 기본값으로 z=0 설정
 
@@ -363,7 +363,6 @@ namespace graph_planner {
         }
 
         void utmToLatLon(double utm_x, double utm_y, double &lat, double &lon, const std::string& utm_zone) {
-            std::pair<double, double> tmp;
             int zone = std::stoi(utm_zone.substr(0, utm_zone.size() - 1));  // 숫자 부분 (예: "52N" → 52)
             bool north = (utm_zone.back() == 'N'); // 북반구 여부 확인
 
@@ -373,8 +372,8 @@ namespace graph_planner {
             double e = std::sqrt(f * (2 - f));
             double e1 = (1 - std::sqrt(1 - e * e)) / (1 + std::sqrt(1 - e * e));
 
-            // 중앙 경도 계산
-            double lambda0 = (zone - 1) * 6 - 180 + 3;
+            // 중앙 경도 계산 (라디안 단위로 변환)
+            double lambda0 = (((zone - 1) * 6 - 180 + 3) * M_PI / 180.0);
 
             // 남반구 보정
             if (!north) {
@@ -385,10 +384,11 @@ namespace graph_planner {
             double M = utm_y / k0;
             double mu = M / (a * (1 - e * e / 4 - 3 * e * e * e * e / 64 - 5 * e * e * e * e * e * e / 256));
 
-            double phi1 = mu + (3 * e1 / 2 - 27 * e1 * e1 * e1 / 32) * std::sin(2 * mu)
-                              + (21 * e1 * e1 / 16 - 55 * e1 * e1 * e1 * e1 / 32) * std::sin(4 * mu)
-                              + (151 * e1 * e1 * e1 / 96) * std::sin(6 * mu)
-                              + (1097 * e1 * e1 * e1 * e1 / 512) * std::sin(8 * mu);
+            double phi1 = mu
+                + (3 * e1 / 2 - 27 * e1 * e1 * e1 / 32) * std::sin(2 * mu)
+                + (21 * e1 * e1 / 16 - 55 * e1 * e1 * e1 * e1 / 32) * std::sin(4 * mu)
+                + (151 * e1 * e1 * e1 / 96) * std::sin(6 * mu)
+                + (1097 * e1 * e1 * e1 * e1 / 512) * std::sin(8 * mu);
 
             double N1 = a / std::sqrt(1 - e * e * std::sin(phi1) * std::sin(phi1));
             double T1 = std::tan(phi1) * std::tan(phi1);
@@ -396,18 +396,18 @@ namespace graph_planner {
             double R1 = a * (1 - e * e) / std::pow(1 - e * e * std::sin(phi1) * std::sin(phi1), 1.5);
             double D = (utm_x - 500000.0) / (N1 * k0);
 
-            // 최종 위도 계산
-            lat = phi1 - (N1 * std::tan(phi1) / R1) *
-                  (D * D / 2 - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * (e * e / (1 - e * e))) * D * D * D * D / 24
-                   + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * (e * e / (1 - e * e)) - 3 * C1 * C1) * D * D * D * D * D * D / 720);
+            // 최종 위도 계산 (라디안 단위)
+            double lat_rad = phi1 - (N1 * std::tan(phi1) / R1) *
+                (D * D / 2 - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * (e * e / (1 - e * e))) * D * D * D * D / 24
+                 + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * (e * e / (1 - e * e)) - 3 * C1 * C1) * D * D * D * D * D * D / 720);
 
-            lat = lat * 180.0 / M_PI; // 라디안을 도(degree)로 변환
+            lat = lat_rad * 180.0 / M_PI; // 라디안을 도(degree)로 변환
 
-            // 최종 경도 계산
-            lon = lambda0 + (D - (1 + 2 * T1 + C1) * D * D * D / 6
-                   + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * (e * e / (1 - e * e)) + 24 * T1 * T1) * D * D * D * D * D / 120) / std::cos(phi1);
+            // 최종 경도 계산 (라디안 단위)
+            double lon_rad = lambda0 + (D - (1 + 2 * T1 + C1) * D * D * D / 6
+                + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * (e * e / (1 - e * e)) + 24 * T1 * T1) * D * D * D * D * D / 120) / std::cos(phi1);
 
-            lon = lon * 180.0 / M_PI; // 라디안을 도(degree)로 변환
+            lon = lon_rad * 180.0 / M_PI; // 라디안을 도(degree)로 변환
         }
 
         void gpsPathfinder(Node& start, Node& goal, std::vector<geometry_msgs::PoseStamped>& plan) {
@@ -438,70 +438,6 @@ namespace graph_planner {
             findPath(graph_, start.getID(), goal.getID(), plan);
 
             //std::cout << "Path finder called." << std::endl;
-        }
-
-        void Umeyama() {
-            // 1. 대응점 데이터 설정 (A 좌표계의 점들)
-            Eigen::MatrixXd X(3, 2);
-            X << 2, 3,
-                 4, 5,
-                 3, 7;
-
-            // 2. B 좌표계의 대응 점들 생성
-            //    (예제에서는 A 좌표계의 점들에 대해,
-            //     스케일 1.5, 회전 30도, 평행이동 (1, -2)를 적용했다고 가정)
-            double theta = M_PI / 6; // 30도 (라디안 단위)
-            double s_true = 1.5;
-            Eigen::Vector2d t_true(1, -2);
-
-            Eigen::Matrix2d R_true;
-            R_true << cos(theta), -sin(theta),
-                      sin(theta),  cos(theta);
-
-            Eigen::MatrixXd Y(3, 2);
-            for (int i = 0; i < X.rows(); i++) {
-                Eigen::Vector2d xi = X.row(i);
-                // B 좌표계: Y = s_true * (R_true * xi) + t_true
-                Eigen::Vector2d yi = s_true * (R_true * xi) + t_true;
-                Y.row(i) = yi;
-            }
-
-            // 3. Umeyama 알고리즘을 통한 변환 파라미터 추정
-
-            // (a) 각 좌표계의 중심(centroid) 계산
-            Eigen::Vector2d mu_X = X.colwise().mean();
-            Eigen::Vector2d mu_Y = Y.colwise().mean();
-
-            // (b) 각 점들을 중심화 (centered coordinates)
-            Eigen::MatrixXd Xc = X.rowwise() - mu_X.transpose();
-            Eigen::MatrixXd Yc = Y.rowwise() - mu_Y.transpose();
-
-            // (c) 공분산 행렬 계산: Sigma = (Yc^T * Xc) / N
-            Eigen::Matrix2d Sigma = (Yc.transpose() * Xc) / X.rows();
-
-            // (d) SVD 분해: Sigma = U * D * V^T
-            Eigen::JacobiSVD<Eigen::Matrix2d> svd(Sigma, Eigen::ComputeFullU | Eigen::ComputeFullV);
-            Eigen::Matrix2d U = svd.matrixU();
-            Eigen::Matrix2d V = svd.matrixV();
-            Eigen::Vector2d D = svd.singularValues();
-
-            // (e) 회전 행렬 결정
-            double d = (U.determinant() * V.determinant());
-            Eigen::Matrix2d S = Eigen::Matrix2d::Identity();
-            S(1, 1) = d;
-            Eigen::Matrix2d R_est = U * S * V.transpose();
-
-            // (f) 스케일 팩터 결정
-            double var_X = (Xc.array().square().sum()) / X.rows();
-            double s_est = (D.dot(S.diagonal())) / var_X;
-
-            // (g) 평행 이동 (translation) 추정
-            Eigen::Vector2d t_est = mu_Y - s_est * R_est * mu_X;
-
-            // 4. 결과 출력
-            std::cout << "Estimated Scale: " << s_est << std::endl;
-            std::cout << "Estimated Rotation Matrix:\n" << R_est << std::endl;
-            std::cout << "Estimated Translation: " << t_est.transpose() << std::endl;
         }
 
         void Callgraph() {
@@ -547,9 +483,6 @@ namespace graph_planner {
 
             map_display_srv.request.correction_val.z = 0.0; // alt
 
-            std::cout << current_utm_.first << " " << origin_utm_.first << " " << map_utm_.first << std::endl;
-            std::cout << current_utm_.second << " " << origin_utm_.second << " " << map_utm_.second << std::endl;
-
             if (mapdisplayservice_.call(map_display_srv)) {
                 std::cout << "map display service call" << std::endl;
             } else {
@@ -558,36 +491,20 @@ namespace graph_planner {
             }
         }
 
-        double distance2D(const geometry_msgs::Point &a, const geometry_msgs::Point &b) {
-            return std::sqrt((a.x - b.x) * (a.x - b.x) +
-                             (a.y - b.y) * (a.y - b.y));
-        }
-
         void gpsCallback(const morai_msgs::GPSMessage::ConstPtr& msg) {
             current_gps_.first = msg->latitude;
             current_gps_.second = msg->longitude;
 
-            /*
-            store gps coord for coordinate registration
-            */
-
-            geometry_msgs::Point tmp;
-            tmp.x = current_gps_.first;
-            tmp.y = current_gps_.second;
-
-            if(first_point) {
-                gps_points.push_back(tmp);
-                first_point = false;
-            }
-            else {
-                const geometry_msgs::Point &last_point = gps_points.back();
-                double dist = distance2D(tmp, last_point);
-                if (dist >= 0.1) {
-                    gps_points.push_back(tmp);
-                }
-            }
-
             latLonToUtm(msg->latitude, msg->longitude, current_utm_.first, current_utm_.second, utm_zone_);
+
+            if (!gpsinit_) {
+                init_gps_.first = current_gps_.first;
+                init_gps_.second = current_gps_.second;
+                init_utm_.first = current_utm_.first;
+                init_utm_.second = current_utm_.second;
+                gpsinit_ = true;
+            }
+
             if (!mapinit_) {
                 DisplayMap();
                 mapinit_ = true;
