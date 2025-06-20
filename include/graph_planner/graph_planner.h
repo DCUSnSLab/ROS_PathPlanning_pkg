@@ -10,6 +10,7 @@
 #include <nav_core/base_global_planner.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Point.h>
+#include <sensor_msgs/NavSatFix.h>
 #include <angles/angles.h>
 #include <base_local_planner/world_model.h>
 #include <base_local_planner/costmap_model.h>
@@ -307,8 +308,11 @@ namespace graph_planner {
 //                    pose.pose.position.x = tmp->getEasting();  // x 좌표
 //                    pose.pose.position.y = tmp->getNorthing(); // y 좌표
 
-                    pose.pose.position.x = tmp->getEasting() - init_utm_.first;  // x 좌표
-                    pose.pose.position.y = tmp->getNorthing() - init_utm_.second; // y 좌표
+                    // pose.pose.position.x = tmp->getEasting() - init_utm_.first + (current_utm_.first - init_utm_.first);  // x 좌표
+                    // pose.pose.position.y = tmp->getNorthing() - init_utm_.second + (current_utm_.second - init_utm_.second); // y 좌표
+                    pose.pose.position.x = tmp->getEasting() - init_utm_.first;
+                    pose.pose.position.y = tmp->getNorthing() - init_utm_.second;
+
 
 //                    pose.pose.position.x = init_utm_.first - tmp->getEasting();  // x 좌표
 //                    pose.pose.position.y = init_utm_.second - tmp->getNorthing(); // y 좌표
@@ -430,8 +434,8 @@ namespace graph_planner {
             graph_.addNode(start);
             graph_.addNode(goal);
 
-            graph_.addLink(start.getID(), start_near, 0.1);
-            graph_.addLink(goal_near, goal.getID(), 0.1);
+            graph_.addLink(start.getID(), start_near, 5.0);
+            graph_.addLink(goal_near, goal.getID(), 5.0);
 
             // find path in graph
             // findPath(graph_, "N0000", "N0028", plan);
@@ -447,14 +451,10 @@ namespace graph_planner {
                 ROS_INFO("success");
                 std::cout << "map service call" << std::endl;
 
-                std::cout << "testtest" << std::endl;
-
                 std::cout << map_srv.response.map_graph.node_array.nodes[0].ID << std::endl; // cout for debug
                 //graph_ = map_srv.response.map_graph;
                 //ndarr_ = map_srv.response.map_graph.node_array;
                 bool initMapcoord = false;
-
-                std::cout << "test3" << std::endl;
 
                 for (const auto &node : map_srv.response.map_graph.node_array.nodes) {
                     graph_.addNode(node.ID, node.Lat, node.Long, node.Easting, node.Northing);
@@ -467,13 +467,9 @@ namespace graph_planner {
                     }
                 }
 
-                std::cout << "test4" << std::endl;
-
                 for (const auto &link : map_srv.response.map_graph.link_array.links) {
                     graph_.addLink(link.FromNodeID, link.ToNodeID, link.Length);
                 }
-
-                std::cout << "test5" << std::endl;
 
                 ROS_INFO("Create map graph");
 
@@ -508,22 +504,27 @@ namespace graph_planner {
         }
 
         // void gpsCallback(const morai_msgs::GPSMessage::ConstPtr& msg) {
-        void gpsCallback(const geometry_msgs::Point::ConstPtr& msg) {
-            // current_gps_.first = msg->latitude;
-            // current_gps_.second = msg->longitude;
+        // void gpsCallback(const geometry_msgs::Point::ConstPtr& msg) {
+        void gpsCallback(const sensor_msgs::NavSatFix::ConstPtr& msg) {
+            current_gps_.first = msg->latitude;
+            current_gps_.second = msg->longitude;
 
-            current_utm_.first = msg->x;
-            current_utm_.second = msg->y;
+            // current_utm_.first = msg->x;
+            // current_utm_.second = msg->y;
 
-            // latLonToUtm(msg->latitude, msg->longitude, current_utm_.first, current_utm_.second, utm_zone_);
+            latLonToUtm(msg->latitude, msg->longitude, current_utm_.first, current_utm_.second, utm_zone_);
 
-            utmToLatLon(current_utm_.first, current_utm_.second, current_gps_.first, current_gps_.second, utm_zone_);
+            // utmToLatLon(current_utm_.first, current_utm_.second, current_gps_.first, current_gps_.second, utm_zone_);
 
             if (!gpsinit_) {
-                init_gps_.first = current_gps_.first;
-                init_gps_.second = current_gps_.second;
-                init_utm_.first = current_utm_.first;
-                init_utm_.second = current_utm_.second;
+                // init_gps_.first = current_gps_.first;
+                // init_gps_.second = current_gps_.second;
+                double init_x, init_y;
+                
+                private_nh_.getParam("/init_position/x", init_x);
+                private_nh_.getParam("/init_position/y", init_y);
+                init_utm_.first = init_x;
+                init_utm_.second = init_y;
                 gpsinit_ = true;
             }
 

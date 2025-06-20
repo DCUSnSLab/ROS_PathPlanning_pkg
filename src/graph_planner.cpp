@@ -33,17 +33,15 @@ void GraphPlanner::initialize(std::string name, costmap_2d::Costmap2DROS* costma
         ROS_DEBUG("This is test output(init)");
 
         // gps_sub_ = private_nh_.subscribe("/gps", 10, &GraphPlanner::gpsCallback, this);
-        gps_sub_ = private_nh_.subscribe("/current_utm_relative_position", 10, &GraphPlanner::gpsCallback, this);
+        // gps_sub_ = private_nh_.subscribe("/current_utm_relative_position", 10, &GraphPlanner::gpsCallback, this);
+        // 0, 0 기준 상대 좌표를 사용하는 경우, UTMtoGPS 함수의 결과가 이상하게 나와 Global planning 수행 불가
+        gps_sub_ = private_nh_.subscribe("/ublox_f9k/fix", 10, &GraphPlanner::gpsCallback, this);
 
         private_nh_.getParam("map_file", file_path_);
 
         std::cout << file_path_ << std::endl;
 
-        std::cout << "test1" << std::endl;
-
         Callgraph();
-
-        std::cout << "test2" << std::endl;
 
         initialized_ = true;
     }
@@ -77,14 +75,16 @@ bool GraphPlanner::makePlan(const geometry_msgs::PoseStamped& start, const geome
 
 //    goal_utm_.first = map_utm_.first + goal.pose.position.x;
 //    goal_utm_.second = map_utm_.second + goal.pose.position.y;
-    goal_utm_.first = goal.pose.position.x + current_utm_.first;
-    goal_utm_.second = goal.pose.position.y + current_utm_.second;
+    goal_utm_.first = goal.pose.position.x + init_utm_.first;
+    goal_utm_.second = goal.pose.position.y + init_utm_.second;
+    std::cout << "goal pose position" << goal.pose.position.x << " " << goal.pose.position.y << std::endl;
+    std::cout << "init utm" << init_utm_.first << " " << init_utm_.second << std::endl;
 //    goal_utm_.first = current_utm_.first;
 //    goal_utm_.second = current_utm_.second;
     std::cout << utm_zone_ << std::endl;
 
     utmToLatLon(goal_utm_.first, goal_utm_.second, goal_gps_.first, goal_gps_.second, utm_zone_);
-    GraphPlanner::Node goal_node("Goal", goal_gps_.first, goal_gps_.second, goal_utm_.first, goal_utm_.second);
+    GraphPlanner::Node goal_node("Goal", goal_gps_.first, goal_gps_.second, goal_utm_.first, goal_utm_.second); // 아마도 제대로 안되는듯?
 
     std::cout << goal_utm_.first << " " << goal_utm_.second << std::endl;
     std::cout << current_utm_.first << " " << current_utm_.second << std::endl;

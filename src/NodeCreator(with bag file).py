@@ -53,8 +53,8 @@ def create_json_graph(gps_data):
     """
     current_date = datetime.datetime.now().strftime("%Y%m%d")
     graph = {"Node": [], "Link": []}
-    #min_distance = 0.000045  # Approx. 5 meters in latitude/longitude degrees
-    min_distance = 0.00000898  # Approx. 1 meters in latitude/longitude degrees
+    min_distance = 0.000045  # Approx. 5 meters in latitude/longitude degrees
+    #min_distance = 0.00000898  # Approx. 1 meters in latitude/longitude degrees
     #min_distance = 0.00000449  # Approx. 50 centimeters in latitude/longitude degrees
 
     prev_lat, prev_lon, prev_alt = None, None, None  # Initialize previous point
@@ -165,7 +165,7 @@ def main():
         print("No output file selected. Exiting.")
         return
 
-    gps_topic = "/ublox_gps/fix"  # You can change this as needed
+    gps_topic = "/ublox_f9k/fix"  # You can change this as needed
 
     print("Extracting GPS data from rosbag...")
     gps_data = extract_gps_from_bag(bag_file, gps_topic)
