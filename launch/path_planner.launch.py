@@ -13,7 +13,7 @@ def generate_launch_description():
     # Declare launch argument for map file path
     map_file_arg = DeclareLaunchArgument(
         'map_file_path',
-        default_value='/home/ros2/ros2_ws/src/scv_robot_gazebo/maps/20250115_k-city.json',
+        default_value='/home/ros2/ros2_ws/src/gmserver/maps/3x3_map.json',
         description='Path to the JSON map file'
     )
     
