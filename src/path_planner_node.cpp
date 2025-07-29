@@ -6,6 +6,9 @@
 #include <nav_msgs/msg/path.hpp>
 #include <sensor_msgs/msg/nav_sat_fix.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+#include <tf2_ros/transform_broadcaster.h>
+#include <tf2/LinearMath/Quaternion.h>
 #include <gmserver/srv/load_map.hpp>
 #include <vector>
 #include <memory>
@@ -89,6 +92,9 @@ public:
         nodes_publisher_ = this->create_publisher<geometry_msgs::msg::PoseArray>("map_nodes_viz", 10);
         links_publisher_ = this->create_publisher<geometry_msgs::msg::PoseArray>("map_links_viz", 10);
         map_viz_publisher_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("map_graph_viz", 10);
+        
+        // Create TF broadcaster for map->odom transform
+        tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
         
         // Create timer for checking path planning conditions
         timer_ = this->create_wall_timer(
@@ -247,9 +253,9 @@ private:
                 viz_marker.ns = "graph";
                 viz_marker.id = i;
                 viz_marker.type = visualization_msgs::msg::Marker::CUBE;
-                viz_marker.scale.x = 10;
-                viz_marker.scale.y = 10;
-                viz_marker.scale.z = 10;
+                viz_marker.scale.x = 0.1;
+                viz_marker.scale.y = 0.1;
+                viz_marker.scale.z = 0.1;
                 viz_marker.color.a = 1.0;
                 viz_marker.color.r = 0.0;
                 viz_marker.color.g = 1.0;
@@ -277,9 +283,9 @@ private:
                 viz_marker.ns = "graph";
                 viz_marker.id = i;
                 viz_marker.type = visualization_msgs::msg::Marker::SPHERE;
-                viz_marker.scale.x = 10;
-                viz_marker.scale.y = 10;
-                viz_marker.scale.z = 10;
+                viz_marker.scale.x = 0.1;
+                viz_marker.scale.y = 0.1;
+                viz_marker.scale.z = 0.1;
                 viz_marker.color.a = 1.0;
                 viz_marker.color.r = 1.0;
                 viz_marker.color.g = 0.0;
@@ -309,6 +315,9 @@ private:
         
         current_gps_ = *msg;
         current_gps_received_ = true;
+        
+        // Publish GPS-based map->odom transform
+        publishMapToOdomTransform(*msg);
         
         RCLCPP_DEBUG(this->get_logger(), "GPS received: lat=%.6f, lon=%.6f", 
                     msg->latitude, msg->longitude);
@@ -639,6 +648,41 @@ private:
         return closest_id;
     }
     
+    void publishMapToOdomTransform(const sensor_msgs::msg::NavSatFix& gps)
+    {
+        // Convert GPS to UTM coordinates
+        double utm_easting, utm_northing;
+        gpsToUTM(gps.latitude, gps.longitude, utm_easting, utm_northing);
+        
+        // Create transform from map to odom based on GPS position
+        geometry_msgs::msg::TransformStamped transform_stamped;
+        
+        transform_stamped.header.stamp = this->get_clock()->now();
+        transform_stamped.header.frame_id = "map";
+        transform_stamped.child_frame_id = "odom";
+        
+        // Set translation to GPS UTM position relative to reference point
+        transform_stamped.transform.translation.x = utm_easting - gps_ref_utm_easting_;
+        transform_stamped.transform.translation.y = utm_northing - gps_ref_utm_northing_;
+        transform_stamped.transform.translation.z = gps.altitude - gps_ref_alt_;
+        
+        // Set rotation (no rotation for GPS-based localization)
+        tf2::Quaternion q;
+        q.setRPY(0, 0, 0);
+        transform_stamped.transform.rotation.x = q.x();
+        transform_stamped.transform.rotation.y = q.y();
+        transform_stamped.transform.rotation.z = q.z();
+        transform_stamped.transform.rotation.w = q.w();
+        
+        // Broadcast the transform
+        tf_broadcaster_->sendTransform(transform_stamped);
+        
+        RCLCPP_DEBUG(this->get_logger(), 
+                    "Published map->odom transform: GPS(%.6f, %.6f) -> UTM(%.2f, %.2f) -> offset(%.2f, %.2f)",
+                    gps.latitude, gps.longitude, utm_easting, utm_northing,
+                    transform_stamped.transform.translation.x, transform_stamped.transform.translation.y);
+    }
+    
     // Member variables
     rclcpp::Client<gmserver::srv::LoadMap>::SharedPtr map_client_;
     rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr gps_subscriber_;
@@ -648,6 +692,7 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr links_publisher_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr map_viz_publisher_;
     rclcpp::TimerBase::SharedPtr timer_;
+    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
     
     geometry_msgs::msg::PoseArray map_nodes_;
     geometry_msgs::msg::PoseArray map_links_;

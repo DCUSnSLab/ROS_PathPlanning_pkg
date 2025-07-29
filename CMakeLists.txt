@@ -13,6 +13,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2 REQUIRED)
 find_package(gmserver REQUIRED)
 
 # Add executable
@@ -26,6 +28,8 @@ ament_target_dependencies(path_planner_node
   visualization_msgs
   nav_msgs
   sensor_msgs
+  tf2_ros
+  tf2
   gmserver
 )
 
