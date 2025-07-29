@@ -5,6 +5,7 @@
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <sensor_msgs/msg/nav_sat_fix.hpp>
+#include <sensor_msgs/msg/imu.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <tf2_ros/transform_broadcaster.h>
@@ -73,6 +74,7 @@ public:
         
         // Initialize state variables
         current_gps_received_ = false;
+        current_imu_received_ = false;
         goal_received_ = false;
         
         // Create service client for map loading
@@ -82,6 +84,10 @@ public:
         gps_subscriber_ = this->create_subscription<sensor_msgs::msg::NavSatFix>(
             "gps/fix", 10,
             std::bind(&PathPlannerNode::gpsCallback, this, std::placeholders::_1));
+            
+        imu_subscriber_ = this->create_subscription<sensor_msgs::msg::Imu>(
+            "imu/data", 10,
+            std::bind(&PathPlannerNode::imuCallback, this, std::placeholders::_1));
             
         goal_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
             "goal_pose", 10,
@@ -321,6 +327,20 @@ private:
         
         RCLCPP_DEBUG(this->get_logger(), "GPS received: lat=%.6f, lon=%.6f", 
                     msg->latitude, msg->longitude);
+    }
+    
+    void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg)
+    {
+        current_imu_ = *msg;
+        current_imu_received_ = true;
+        
+        // Update map->odom transform with new orientation if GPS is also available
+        if (current_gps_received_) {
+            publishMapToOdomTransform(current_gps_);
+        }
+        
+        RCLCPP_DEBUG(this->get_logger(), "IMU received: orientation(%.3f, %.3f, %.3f, %.3f)", 
+                    msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w);
     }
     
     void goalCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
@@ -657,7 +677,7 @@ private:
         // Create transform from map to odom based on GPS position
         geometry_msgs::msg::TransformStamped transform_stamped;
         
-        transform_stamped.header.stamp = this->get_clock()->now();
+        transform_stamped.header.stamp = this->now();
         transform_stamped.header.frame_id = "map";
         transform_stamped.child_frame_id = "odom";
         
@@ -666,26 +686,34 @@ private:
         transform_stamped.transform.translation.y = utm_northing - gps_ref_utm_northing_;
         transform_stamped.transform.translation.z = gps.altitude - gps_ref_alt_;
         
-        // Set rotation (no rotation for GPS-based localization)
-        tf2::Quaternion q;
-        q.setRPY(0, 0, 0);
-        transform_stamped.transform.rotation.x = q.x();
-        transform_stamped.transform.rotation.y = q.y();
-        transform_stamped.transform.rotation.z = q.z();
-        transform_stamped.transform.rotation.w = q.w();
+        // Set rotation from IMU if available, otherwise no rotation
+        if (current_imu_received_) {
+            // Use IMU orientation directly
+            transform_stamped.transform.rotation = current_imu_.orientation;
+        } else {
+            // No rotation if IMU not available
+            tf2::Quaternion q;
+            q.setRPY(0, 0, 0);
+            transform_stamped.transform.rotation.x = q.x();
+            transform_stamped.transform.rotation.y = q.y();
+            transform_stamped.transform.rotation.z = q.z();
+            transform_stamped.transform.rotation.w = q.w();
+        }
         
         // Broadcast the transform
         tf_broadcaster_->sendTransform(transform_stamped);
         
         RCLCPP_DEBUG(this->get_logger(), 
-                    "Published map->odom transform: GPS(%.6f, %.6f) -> UTM(%.2f, %.2f) -> offset(%.2f, %.2f)",
+                    "Published map->odom transform: GPS(%.6f, %.6f) -> UTM(%.2f, %.2f) -> offset(%.2f, %.2f), IMU: %s",
                     gps.latitude, gps.longitude, utm_easting, utm_northing,
-                    transform_stamped.transform.translation.x, transform_stamped.transform.translation.y);
+                    transform_stamped.transform.translation.x, transform_stamped.transform.translation.y,
+                    current_imu_received_ ? "available" : "not available");
     }
     
     // Member variables
     rclcpp::Client<gmserver::srv::LoadMap>::SharedPtr map_client_;
     rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr gps_subscriber_;
+    rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_subscriber_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_subscriber_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_publisher_;
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr nodes_publisher_;
@@ -700,10 +728,12 @@ private:
     std::vector<int32_t> link_from_indices_;
     std::vector<int32_t> link_to_indices_;
     
-    // GPS and Goal state
+    // GPS, IMU and Goal state
     sensor_msgs::msg::NavSatFix current_gps_;
+    sensor_msgs::msg::Imu current_imu_;
     geometry_msgs::msg::PoseStamped goal_pose_;
     bool current_gps_received_;
+    bool current_imu_received_;
     bool goal_received_;
     
     // GPS reference coordinates for goal transformation
