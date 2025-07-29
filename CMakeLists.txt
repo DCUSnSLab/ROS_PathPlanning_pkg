@@ -10,6 +10,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(gmserver REQUIRED)
@@ -22,6 +23,7 @@ ament_target_dependencies(path_planner_node
   rclcpp
   std_msgs
   geometry_msgs
+  visualization_msgs
   nav_msgs
   sensor_msgs
   gmserver

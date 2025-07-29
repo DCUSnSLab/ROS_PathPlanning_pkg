@@ -17,13 +17,6 @@ def generate_launch_description():
         description='Path to the JSON map file'
     )
     
-    # Include gmserver map service launch
-    gmserver_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            os.path.join(get_package_share_directory('gmserver'), 'launch', 'map_service.launch.py')
-        ])
-    )
-    
     # Global path planner node
     global_path_planner_node = Node(
         package='scv_global_planner',
@@ -37,6 +30,5 @@ def generate_launch_description():
     
     return LaunchDescription([
         map_file_arg,
-        gmserver_launch,
         global_path_planner_node,
     ])
