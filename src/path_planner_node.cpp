@@ -140,18 +140,20 @@ private:
             if (response->success) {
                 // Store map data
                 map_nodes_ = response->nodes;
-                map_links_ = response->links;
+                node_ids_ = response->node_ids;
+                link_from_indices_ = response->link_from_node_indices;
+                link_to_indices_ = response->link_to_node_indices;
                 
                 RCLCPP_INFO(this->get_logger(), 
                            "Map data stored: %zu nodes, %zu links", 
-                           map_nodes_.poses.size(), map_links_.poses.size());
+                           map_nodes_.poses.size(), link_from_indices_.size());
                 
-                // Build graph from map data
+                // Build graph from map data using actual connectivity
                 buildGraph();
                 
                 RCLCPP_INFO(this->get_logger(), 
                            "Map loaded successfully: %zu nodes, %zu links", 
-                           map_nodes_.poses.size(), map_links_.poses.size());
+                           map_nodes_.poses.size(), link_from_indices_.size());
                 
                 // Publish visualization data
                 publishVisualizationData();
@@ -175,57 +177,34 @@ private:
             node_map_[static_cast<int>(i)] = std::make_shared<AStarNode>(static_cast<int>(i), map_nodes_.poses[i]);
         }
         
-        // Build adjacency list from actual link data
-        // This builds proper graph connectivity based on map_links_ data
-        for (size_t i = 0; i < map_links_.poses.size(); i += 2) {
-            if (i + 1 < map_links_.poses.size()) {
-                // Each link consists of two poses (from and to)
-                int from_id = static_cast<int>(i / 2);  // Link index maps to connections
-                int to_id = static_cast<int>((i / 2) + 1);
+        // Build adjacency list using actual JSON connectivity data
+        if (link_from_indices_.size() == link_to_indices_.size()) {
+            for (size_t i = 0; i < link_from_indices_.size(); ++i) {
+                int from_node_id = link_from_indices_[i];
+                int to_node_id = link_to_indices_[i];
                 
-                // Find closest nodes for the link endpoints
-                auto from_pose = map_links_.poses[i];
-                auto to_pose = map_links_.poses[i + 1];
-                
-                int from_node_id = findClosestNodeToPosition(from_pose.position.x, from_pose.position.y);
-                int to_node_id = findClosestNodeToPosition(to_pose.position.x, to_pose.position.y);
-                
-                if (from_node_id != -1 && to_node_id != -1 && from_node_id != to_node_id) {
+                // Validate node indices
+                if (from_node_id >= 0 && from_node_id < static_cast<int>(map_nodes_.poses.size()) &&
+                    to_node_id >= 0 && to_node_id < static_cast<int>(map_nodes_.poses.size()) &&
+                    from_node_id != to_node_id) {
+                    
+                    // Calculate distance between connected nodes
                     double distance = calculateDistance(map_nodes_.poses[from_node_id], map_nodes_.poses[to_node_id]);
                     
-                    // Add bidirectional links
+                    // Add bidirectional links (roads can be traversed in both directions)
                     adjacency_list_[from_node_id].emplace_back(to_node_id, from_node_id, distance);
                     adjacency_list_[to_node_id].emplace_back(from_node_id, to_node_id, distance);
-                }
-            }
-        }
-        
-        // If no links data available, create 3x3 grid connections based on node positions
-        if (adjacency_list_.empty() && map_nodes_.poses.size() == 9) {
-            RCLCPP_WARN(this->get_logger(), "No valid links found, creating 3x3 grid connections");
-            
-            // Create 3x3 grid connections (assuming nodes are ordered as grid)
-            // Horizontal connections: 0-1, 1-2, 3-4, 4-5, 6-7, 7-8
-            std::vector<std::pair<int, int>> grid_connections = {
-                {0, 1}, {1, 2},  // Row 0
-                {3, 4}, {4, 5},  // Row 1  
-                {6, 7}, {7, 8},  // Row 2
-                {0, 3}, {3, 6},  // Col 0
-                {1, 4}, {4, 7},  // Col 1
-                {2, 5}, {5, 8}   // Col 2
-            };
-            
-            for (auto& connection : grid_connections) {
-                int from_id = connection.first;
-                int to_id = connection.second;
-                
-                if (from_id < map_nodes_.poses.size() && to_id < map_nodes_.poses.size()) {
-                    double distance = calculateDistance(map_nodes_.poses[from_id], map_nodes_.poses[to_id]);
                     
-                    adjacency_list_[from_id].emplace_back(to_id, from_id, distance);
-                    adjacency_list_[to_id].emplace_back(from_id, to_id, distance);
+                    RCLCPP_DEBUG(this->get_logger(), "Connected nodes %d <-> %d (distance: %.2f)", 
+                               from_node_id, to_node_id, distance);
+                } else {
+                    RCLCPP_WARN(this->get_logger(), "Invalid link indices: %d -> %d (total nodes: %zu)", 
+                               from_node_id, to_node_id, map_nodes_.poses.size());
                 }
             }
+        } else {
+            RCLCPP_ERROR(this->get_logger(), "Link arrays size mismatch: from=%zu, to=%zu", 
+                        link_from_indices_.size(), link_to_indices_.size());
         }
         
         RCLCPP_INFO(this->get_logger(), "Graph built with %zu nodes and connectivity for %zu nodes", 
@@ -238,7 +217,14 @@ private:
                 int neighbor = (link.from_node_id == pair.first) ? link.to_node_id : link.from_node_id;
                 connections += std::to_string(neighbor) + " ";
             }
-            RCLCPP_DEBUG(this->get_logger(), "Node %d connected to: %s", pair.first, connections.c_str());
+            RCLCPP_INFO(this->get_logger(), "Node %d connected to: %s", pair.first, connections.c_str());
+        }
+        
+        // Check for isolated nodes
+        for (size_t i = 0; i < map_nodes_.poses.size(); ++i) {
+            if (adjacency_list_.find(static_cast<int>(i)) == adjacency_list_.end()) {
+                RCLCPP_WARN(this->get_logger(), "Node %zu is isolated (no connections)", i);
+            }
         }
     }
     
@@ -665,6 +651,9 @@ private:
     
     geometry_msgs::msg::PoseArray map_nodes_;
     geometry_msgs::msg::PoseArray map_links_;
+    std::vector<std::string> node_ids_;
+    std::vector<int32_t> link_from_indices_;
+    std::vector<int32_t> link_to_indices_;
     
     // GPS and Goal state
     sensor_msgs::msg::NavSatFix current_gps_;
