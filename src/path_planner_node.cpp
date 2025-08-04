@@ -52,6 +52,8 @@ struct Link {
     Link(int from, int to, double len) : from_node_id(from), to_node_id(to), length(len) {}
 };
 
+// No need for constant - will use dynamic ID based on existing nodes
+
 class PathPlannerNode : public rclcpp::Node
 {
 public:
@@ -76,6 +78,10 @@ public:
         current_gps_received_ = false;
         current_imu_received_ = false;
         goal_received_ = false;
+        has_temp_goal_node_ = false;
+        has_temp_start_node_ = false;
+        temp_goal_node_id_ = -2;
+        temp_start_node_id_ = -3;
         
         // Create service client for map loading
         map_client_ = this->create_client<gmserver::srv::LoadMap>("load_map");
@@ -255,13 +261,13 @@ private:
                 pose.position.y -= gps_ref_utm_northing_;
 
                 viz_marker.header.frame_id = "map";
-                viz_marker.header.stamp = this->get_clock()->now();
+                viz_marker.header.stamp = this->now();
                 viz_marker.ns = "graph";
                 viz_marker.id = i;
                 viz_marker.type = visualization_msgs::msg::Marker::CUBE;
-                viz_marker.scale.x = 0.1;
-                viz_marker.scale.y = 0.1;
-                viz_marker.scale.z = 0.1;
+                viz_marker.scale.x = 3.0;
+                viz_marker.scale.y = 3.0;
+                viz_marker.scale.z = 3.0;
                 viz_marker.color.a = 1.0;
                 viz_marker.color.r = 0.0;
                 viz_marker.color.g = 1.0;
@@ -273,7 +279,7 @@ private:
 
                 i++;
             }
-            viz_nodes.header.stamp = this->get_clock()->now();
+            viz_nodes.header.stamp = this->now();
             nodes_publisher_->publish(viz_nodes);
         }
         
@@ -285,13 +291,13 @@ private:
                 pose.position.y -= gps_ref_utm_northing_;
 
                 viz_marker.header.frame_id = "map";
-                viz_marker.header.stamp = this->get_clock()->now();
+                viz_marker.header.stamp = this->now();
                 viz_marker.ns = "graph";
                 viz_marker.id = i;
                 viz_marker.type = visualization_msgs::msg::Marker::SPHERE;
-                viz_marker.scale.x = 0.1;
-                viz_marker.scale.y = 0.1;
-                viz_marker.scale.z = 0.1;
+                viz_marker.scale.x = 3.0;
+                viz_marker.scale.y = 3.0;
+                viz_marker.scale.z = 3.0;
                 viz_marker.color.a = 1.0;
                 viz_marker.color.r = 1.0;
                 viz_marker.color.g = 0.0;
@@ -303,7 +309,7 @@ private:
 
                 i++;
             }
-            viz_links.header.stamp = this->get_clock()->now();
+            viz_links.header.stamp = this->now();
             links_publisher_->publish(viz_links);
             
         }
@@ -388,6 +394,9 @@ private:
             return;
         }
         
+        // Clean up any existing temporary nodes first
+        removeTemporaryNodes();
+        
         // Convert GPS to UTM coordinates
         double start_utm_easting, start_utm_northing;
         gpsToUTM(current_gps_.latitude, current_gps_.longitude, start_utm_easting, start_utm_northing);
@@ -396,16 +405,21 @@ private:
         double goal_x = goal_pose_.pose.position.x;
         double goal_y = goal_pose_.pose.position.y;
         
-        // Find closest nodes to start and goal positions
-        int start_node_id = findClosestNode(start_utm_easting, start_utm_northing);
-        int goal_node_id = findClosestNode(goal_x, goal_y);
-        
-        if (start_node_id == -1 || goal_node_id == -1) {
-            RCLCPP_ERROR(this->get_logger(), "Could not find valid start or goal nodes");
+        // Create temporary start node at GPS position
+        int start_node_id = createTemporaryStartNode(start_utm_easting, start_utm_northing);
+        if (start_node_id == -1) {
+            RCLCPP_ERROR(this->get_logger(), "Could not create temporary start node");
             return;
         }
         
-        RCLCPP_INFO(this->get_logger(), "Planning path from GPS (UTM: %.2f, %.2f) -> node %d to Goal (%.2f, %.2f) -> node %d", 
+        // Create temporary goal node and connect it to the closest existing node
+        int goal_node_id = createTemporaryGoalNode(goal_x, goal_y);
+        if (goal_node_id == -1) {
+            RCLCPP_ERROR(this->get_logger(), "Could not create temporary goal node");
+            return;
+        }
+        
+        RCLCPP_INFO(this->get_logger(), "Planning path from GPS (UTM: %.2f, %.2f) -> temp node %d to Goal (%.2f, %.2f) -> temp node %d", 
                    start_utm_easting, start_utm_northing, start_node_id, goal_x, goal_y, goal_node_id);
         
         // Plan path using A*
@@ -436,6 +450,9 @@ private:
         } else {
             RCLCPP_WARN(this->get_logger(), "No path found from node %d to node %d", start_node_id, goal_node_id);
         }
+        
+        // Clean up temporary nodes after path planning
+        removeTemporaryNodes();
     }
     
     // A* path planning algorithm implementation
@@ -668,6 +685,139 @@ private:
         return closest_id;
     }
     
+    int createTemporaryGoalNode(double goal_x, double goal_y)
+    {
+        temp_goal_node_id_ = -2;
+        
+        // Create temporary goal node pose
+        geometry_msgs::msg::Pose goal_pose;
+        goal_pose.position.x = goal_x;
+        goal_pose.position.y = goal_y;
+        goal_pose.position.z = 0.0;
+        goal_pose.orientation.w = 1.0;
+        
+        // Add temporary node to node map
+        auto temp_node = std::make_shared<AStarNode>(temp_goal_node_id_, goal_pose);
+        node_map_[temp_goal_node_id_] = temp_node;
+        
+        // Find closest existing node
+        int closest_node_id = findClosestNodeToPosition(goal_x, goal_y);
+        if (closest_node_id == -1) {
+            RCLCPP_ERROR(this->get_logger(), "No existing nodes found to connect temporary goal node");
+            return -1;
+        }
+        
+        // Calculate distance to closest node
+        double distance = calculateDistance(map_nodes_.poses[closest_node_id], goal_pose);
+        
+        // Create bidirectional links between goal node and closest existing node
+        adjacency_list_[temp_goal_node_id_].emplace_back(closest_node_id, temp_goal_node_id_, distance);
+        adjacency_list_[closest_node_id].emplace_back(temp_goal_node_id_, closest_node_id, distance);
+        
+        has_temp_goal_node_ = true;
+        
+        RCLCPP_INFO(this->get_logger(), 
+                   "Created temporary goal node %d at (%.2f, %.2f) connected to node %d (distance: %.2f)",
+                   temp_goal_node_id_, goal_x, goal_y, closest_node_id, distance);
+        
+        return temp_goal_node_id_;
+    }
+    
+    int createTemporaryStartNode(double start_x, double start_y)
+    {
+        temp_start_node_id_ = -3;
+        
+        // Create temporary start node pose
+        geometry_msgs::msg::Pose start_pose;
+        start_pose.position.x = start_x;
+        start_pose.position.y = start_y;
+        start_pose.position.z = 0.0;
+        start_pose.orientation.w = 1.0;
+        
+        // Add temporary node to node map
+        auto temp_node = std::make_shared<AStarNode>(temp_start_node_id_, start_pose);
+        node_map_[temp_start_node_id_] = temp_node;
+        
+        // Find closest existing node
+        int closest_node_id = findClosestNodeToPosition(start_x, start_y);
+        if (closest_node_id == -1) {
+            RCLCPP_ERROR(this->get_logger(), "No existing nodes found to connect temporary start node");
+            return -1;
+        }
+        
+        // Calculate distance to closest node
+        double distance = calculateDistance(map_nodes_.poses[closest_node_id], start_pose);
+        
+        // Create bidirectional links between start node and closest existing node
+        adjacency_list_[temp_start_node_id_].emplace_back(closest_node_id, temp_start_node_id_, distance);
+        adjacency_list_[closest_node_id].emplace_back(temp_start_node_id_, closest_node_id, distance);
+        
+        has_temp_start_node_ = true;
+        
+        RCLCPP_INFO(this->get_logger(), 
+                   "Created temporary start node %d at (%.2f, %.2f) connected to node %d (distance: %.2f)",
+                   temp_start_node_id_, start_x, start_y, closest_node_id, distance);
+        
+        return temp_start_node_id_;
+    }
+    
+    void removeTemporaryNodes()
+    {
+        // Remove temporary goal node
+        if (has_temp_goal_node_) {
+            auto temp_it = node_map_.find(temp_goal_node_id_);
+            if (temp_it != node_map_.end()) {
+                node_map_.erase(temp_it);
+            }
+            
+            auto adj_it = adjacency_list_.find(temp_goal_node_id_);
+            if (adj_it != adjacency_list_.end()) {
+                for (const auto& link : adj_it->second) {
+                    int connected_node_id = (link.from_node_id == temp_goal_node_id_) ? link.to_node_id : link.from_node_id;
+                    auto& connected_links = adjacency_list_[connected_node_id];
+                    connected_links.erase(
+                        std::remove_if(connected_links.begin(), connected_links.end(),
+                            [this](const Link& l) { 
+                                return l.from_node_id == temp_goal_node_id_ || l.to_node_id == temp_goal_node_id_; 
+                            }),
+                        connected_links.end()
+                    );
+                }
+                adjacency_list_.erase(adj_it);
+            }
+            
+            has_temp_goal_node_ = false;
+            RCLCPP_DEBUG(this->get_logger(), "Removed temporary goal node from graph");
+        }
+        
+        // Remove temporary start node  
+        if (has_temp_start_node_) {
+            auto temp_it = node_map_.find(temp_start_node_id_);
+            if (temp_it != node_map_.end()) {
+                node_map_.erase(temp_it);
+            }
+            
+            auto adj_it = adjacency_list_.find(temp_start_node_id_);
+            if (adj_it != adjacency_list_.end()) {
+                for (const auto& link : adj_it->second) {
+                    int connected_node_id = (link.from_node_id == temp_start_node_id_) ? link.to_node_id : link.from_node_id;
+                    auto& connected_links = adjacency_list_[connected_node_id];
+                    connected_links.erase(
+                        std::remove_if(connected_links.begin(), connected_links.end(),
+                            [this](const Link& l) { 
+                                return l.from_node_id == temp_start_node_id_ || l.to_node_id == temp_start_node_id_; 
+                            }),
+                        connected_links.end()
+                    );
+                }
+                adjacency_list_.erase(adj_it);
+            }
+            
+            has_temp_start_node_ = false;
+            RCLCPP_DEBUG(this->get_logger(), "Removed temporary start node from graph");
+        }
+    }
+    
     void publishMapToOdomTransform(const sensor_msgs::msg::NavSatFix& gps)
     {
         // Convert GPS to UTM coordinates
@@ -746,6 +896,12 @@ private:
     // A* algorithm data structures
     std::unordered_map<int, std::shared_ptr<AStarNode>> node_map_;
     std::unordered_map<int, std::vector<Link>> adjacency_list_;
+    
+    // Temporary node management
+    int temp_goal_node_id_;
+    int temp_start_node_id_;
+    bool has_temp_goal_node_;
+    bool has_temp_start_node_;
 };
 
 int main(int argc, char** argv)
