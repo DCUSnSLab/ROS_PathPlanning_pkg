@@ -85,6 +85,7 @@ public:
         current_gps_received_ = false;
         current_imu_received_ = false;
         goal_received_ = false;
+        path_planned_for_current_goal_ = false;
         has_temp_goal_node_ = false;
         has_temp_start_node_ = false;
         temp_goal_node_id_ = -2;
@@ -406,6 +407,7 @@ private:
         // z coordinate can remain relative
         
         goal_received_ = true;
+        path_planned_for_current_goal_ = false; // Reset flag for new goal
         
         RCLCPP_INFO(this->get_logger(), 
                    "Goal received - RViz: (%.2f, %.2f) -> Absolute UTM: (%.2f, %.2f)", 
@@ -418,8 +420,8 @@ private:
     
     void checkAndPlanPath()
     {
-        // Only plan path when we have both current GPS and goal
-        if (current_gps_received_ && goal_received_) {
+        // Only plan path when we have both current GPS and goal, and haven't planned for current goal yet
+        if (current_gps_received_ && goal_received_ && !path_planned_for_current_goal_) {
             planPathFromGpsToGoal();
         }
     }
@@ -493,6 +495,9 @@ private:
             
             RCLCPP_INFO(this->get_logger(), "Published A* path with %zu waypoints (detailed: %zu nodes, %zu links)", 
                        planned_path.poses.size(), detailed_path.path_data.nodes.size(), detailed_path.path_data.links.size());
+            
+            // Mark that path has been planned for current goal
+            path_planned_for_current_goal_ = true;
         } else {
             RCLCPP_WARN(this->get_logger(), "No path found from node %d to node %d", start_node_id, goal_node_id);
         }
@@ -1068,6 +1073,7 @@ private:
     bool current_gps_received_;
     bool current_imu_received_;
     bool goal_received_;
+    bool path_planned_for_current_goal_; // Flag to ensure single path planning per goal
     
     // GPS reference coordinates for goal transformation
     double gps_ref_lat_;
