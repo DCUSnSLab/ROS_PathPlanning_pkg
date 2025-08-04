@@ -16,6 +16,13 @@ find_package(sensor_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(gmserver REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+
+# Generate interfaces
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/PlannedPath.msg"
+  DEPENDENCIES std_msgs geometry_msgs gmserver
+)
 
 # Add executable
 add_executable(path_planner_node src/path_planner_node.cpp)
@@ -32,6 +39,10 @@ ament_target_dependencies(path_planner_node
   tf2
   gmserver
 )
+
+# Link generated interfaces
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(path_planner_node "${cpp_typesupport_target}")
 
 # Install executables
 install(TARGETS
@@ -56,5 +67,8 @@ if(BUILD_TESTING)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
+
+# Export dependencies
+ament_export_dependencies(rosidl_default_runtime)
 
 ament_package()

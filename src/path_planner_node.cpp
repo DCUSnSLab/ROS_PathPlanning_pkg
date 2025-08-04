@@ -11,6 +11,13 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <gmserver/srv/load_map.hpp>
+#include <gmserver/msg/graph_map.hpp>
+#include <gmserver/msg/map_data.hpp>
+#include <gmserver/msg/map_node.hpp>
+#include <gmserver/msg/map_link.hpp>
+#include <gmserver/msg/gps_info.hpp>
+#include <gmserver/msg/utm_info.hpp>
+#include <scv_global_planner/msg/planned_path.hpp>
 #include <vector>
 #include <memory>
 #include <chrono>
@@ -101,6 +108,7 @@ public:
         
         // Create publishers
         path_publisher_ = this->create_publisher<nav_msgs::msg::Path>("planned_path", 10);
+        planned_path_publisher_ = this->create_publisher<scv_global_planner::msg::PlannedPath>("planned_path_detailed", 10);
         nodes_publisher_ = this->create_publisher<geometry_msgs::msg::PoseArray>("map_nodes_viz", 10);
         links_publisher_ = this->create_publisher<geometry_msgs::msg::PoseArray>("map_links_viz", 10);
         map_viz_publisher_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("map_graph_viz", 10);
@@ -156,22 +164,22 @@ private:
                        response->success ? "true" : "false");
             
             if (response->success) {
-                // Store map data
-                map_nodes_ = response->nodes;
-                node_ids_ = response->node_ids;
-                link_from_indices_ = response->link_from_node_indices;
-                link_to_indices_ = response->link_to_node_indices;
+                // Store GraphMap data
+                graph_map_ = response->graph_map;
+                
+                // Convert GraphMap to PoseArray for compatibility with existing visualization
+                convertGraphMapToPoseArrays();
                 
                 RCLCPP_INFO(this->get_logger(), 
                            "Map data stored: %zu nodes, %zu links", 
-                           map_nodes_.poses.size(), link_from_indices_.size());
+                           graph_map_.map_data.nodes.size(), graph_map_.map_data.links.size());
                 
                 // Build graph from map data using actual connectivity
                 buildGraph();
                 
                 RCLCPP_INFO(this->get_logger(), 
                            "Map loaded successfully: %zu nodes, %zu links", 
-                           map_nodes_.poses.size(), link_from_indices_.size());
+                           graph_map_.map_data.nodes.size(), graph_map_.map_data.links.size());
                 
                 // Publish visualization data
                 publishVisualizationData();
@@ -184,45 +192,78 @@ private:
         }
     }
     
+    void convertGraphMapToPoseArrays()
+    {
+        // Convert nodes to PoseArray
+        map_nodes_.poses.clear();
+        node_ids_.clear();
+        
+        for (const auto& node : graph_map_.map_data.nodes) {
+            geometry_msgs::msg::Pose pose;
+            
+            // Use UTM coordinates if available, otherwise use GPS
+            if (!node.utm_info.zone.empty()) {
+                pose.position.x = node.utm_info.easting;
+                pose.position.y = node.utm_info.northing;
+                pose.position.z = node.gps_info.alt;
+            } else {
+                // Simple GPS to local coordinate conversion as fallback
+                pose.position.x = node.gps_info.longitude * 111320.0;
+                pose.position.y = node.gps_info.lat * 110540.0;
+                pose.position.z = node.gps_info.alt;
+            }
+            
+            pose.orientation.w = 1.0; // No rotation for nodes
+            
+            map_nodes_.poses.push_back(pose);
+            node_ids_.push_back(node.id);
+        }
+        
+        map_nodes_.header.frame_id = "map";
+        map_nodes_.header.stamp = this->now();
+        
+        RCLCPP_INFO(this->get_logger(), "Converted %zu nodes from GraphMap to PoseArray", 
+                   map_nodes_.poses.size());
+    }
+    
     void buildGraph()
     {
         // Clear existing graph
         node_map_.clear();
         adjacency_list_.clear();
+        node_id_to_index_.clear();
         
-        // Build node map
-        for (size_t i = 0; i < map_nodes_.poses.size(); ++i) {
+        // Build node map and ID mapping
+        for (size_t i = 0; i < graph_map_.map_data.nodes.size(); ++i) {
+            const auto& map_node = graph_map_.map_data.nodes[i];
             node_map_[static_cast<int>(i)] = std::make_shared<AStarNode>(static_cast<int>(i), map_nodes_.poses[i]);
+            node_id_to_index_[map_node.id] = static_cast<int>(i);
         }
         
-        // Build adjacency list using actual JSON connectivity data
-        if (link_from_indices_.size() == link_to_indices_.size()) {
-            for (size_t i = 0; i < link_from_indices_.size(); ++i) {
-                int from_node_id = link_from_indices_[i];
-                int to_node_id = link_to_indices_[i];
+        // Build adjacency list using GraphMap links
+        for (const auto& link : graph_map_.map_data.links) {
+            // Find node indices from string IDs
+            auto from_it = node_id_to_index_.find(link.from_node_id);
+            auto to_it = node_id_to_index_.find(link.to_node_id);
+            
+            if (from_it != node_id_to_index_.end() && to_it != node_id_to_index_.end()) {
+                int from_node_idx = from_it->second;
+                int to_node_idx = to_it->second;
                 
-                // Validate node indices
-                if (from_node_id >= 0 && from_node_id < static_cast<int>(map_nodes_.poses.size()) &&
-                    to_node_id >= 0 && to_node_id < static_cast<int>(map_nodes_.poses.size()) &&
-                    from_node_id != to_node_id) {
-                    
-                    // Calculate distance between connected nodes
-                    double distance = calculateDistance(map_nodes_.poses[from_node_id], map_nodes_.poses[to_node_id]);
-                    
-                    // Add bidirectional links (roads can be traversed in both directions)
-                    adjacency_list_[from_node_id].emplace_back(to_node_id, from_node_id, distance);
-                    adjacency_list_[to_node_id].emplace_back(from_node_id, to_node_id, distance);
-                    
-                    RCLCPP_DEBUG(this->get_logger(), "Connected nodes %d <-> %d (distance: %.2f)", 
-                               from_node_id, to_node_id, distance);
-                } else {
-                    RCLCPP_WARN(this->get_logger(), "Invalid link indices: %d -> %d (total nodes: %zu)", 
-                               from_node_id, to_node_id, map_nodes_.poses.size());
-                }
+                // Use link length from GraphMap, or calculate if not available
+                double distance = (link.length > 0.0) ? link.length * 1000.0 : // Convert km to m
+                                 calculateDistance(map_nodes_.poses[from_node_idx], map_nodes_.poses[to_node_idx]);
+                
+                // Add bidirectional links (roads can be traversed in both directions)
+                adjacency_list_[from_node_idx].emplace_back(to_node_idx, from_node_idx, distance);
+                adjacency_list_[to_node_idx].emplace_back(from_node_idx, to_node_idx, distance);
+                
+                RCLCPP_DEBUG(this->get_logger(), "Connected nodes %d (%s) <-> %d (%s) (distance: %.2f)", 
+                           from_node_idx, link.from_node_id.c_str(), to_node_idx, link.to_node_id.c_str(), distance);
+            } else {
+                RCLCPP_WARN(this->get_logger(), "Unknown node IDs in link: %s -> %s", 
+                           link.from_node_id.c_str(), link.to_node_id.c_str());
             }
-        } else {
-            RCLCPP_ERROR(this->get_logger(), "Link arrays size mismatch: from=%zu, to=%zu", 
-                        link_from_indices_.size(), link_to_indices_.size());
         }
         
         RCLCPP_INFO(this->get_logger(), "Graph built with %zu nodes and connectivity for %zu nodes", 
@@ -235,13 +276,14 @@ private:
                 int neighbor = (link.from_node_id == pair.first) ? link.to_node_id : link.from_node_id;
                 connections += std::to_string(neighbor) + " ";
             }
-            RCLCPP_INFO(this->get_logger(), "Node %d connected to: %s", pair.first, connections.c_str());
+            RCLCPP_DEBUG(this->get_logger(), "Node %d connected to: %s", pair.first, connections.c_str());
         }
         
         // Check for isolated nodes
-        for (size_t i = 0; i < map_nodes_.poses.size(); ++i) {
+        for (size_t i = 0; i < graph_map_.map_data.nodes.size(); ++i) {
             if (adjacency_list_.find(static_cast<int>(i)) == adjacency_list_.end()) {
-                RCLCPP_WARN(this->get_logger(), "Node %zu is isolated (no connections)", i);
+                RCLCPP_WARN(this->get_logger(), "Node %zu (%s) is isolated (no connections)", 
+                           i, graph_map_.map_data.nodes[i].id.c_str());
             }
         }
     }
@@ -442,11 +484,15 @@ private:
                 planned_path.poses.push_back(pose_stamped);
             }
             
-            // Publish planned path
+            // Publish planned path (기존 nav_msgs::Path)
             path_publisher_->publish(planned_path);
             
-            RCLCPP_INFO(this->get_logger(), "Published A* path with %zu waypoints", 
-                       planned_path.poses.size());
+            // Create and publish detailed planned path (새로운 custom message)
+            auto detailed_path = createDetailedPlannedPath(path_nodes, start_node_id, goal_node_id);
+            planned_path_publisher_->publish(detailed_path);
+            
+            RCLCPP_INFO(this->get_logger(), "Published A* path with %zu waypoints (detailed: %zu nodes, %zu links)", 
+                       planned_path.poses.size(), detailed_path.path_data.nodes.size(), detailed_path.path_data.links.size());
         } else {
             RCLCPP_WARN(this->get_logger(), "No path found from node %d to node %d", start_node_id, goal_node_id);
         }
@@ -818,6 +864,137 @@ private:
         }
     }
     
+    // Create detailed planned path with nodes and links
+    scv_global_planner::msg::PlannedPath createDetailedPlannedPath(
+        const std::vector<std::shared_ptr<AStarNode>>& path_nodes,
+        int start_node_id, int goal_node_id)
+    {
+        scv_global_planner::msg::PlannedPath detailed_path;
+        
+        // Set header
+        detailed_path.header.frame_id = "map";
+        detailed_path.header.stamp = this->get_clock()->now();
+        
+        // Set path metadata
+        detailed_path.path_id = "path_" + std::to_string(this->get_clock()->now().nanoseconds());
+        detailed_path.start_node_id = (start_node_id == temp_start_node_id_) ? "GPS_START" : 
+                                     (start_node_id < static_cast<int>(node_ids_.size()) ? node_ids_[start_node_id] : "UNKNOWN");
+        detailed_path.goal_node_id = (goal_node_id == temp_goal_node_id_) ? "GPS_GOAL" : 
+                                    (goal_node_id < static_cast<int>(node_ids_.size()) ? node_ids_[goal_node_id] : "UNKNOWN");
+        
+        // Calculate total distance
+        double total_distance = 0.0;
+        for (size_t i = 1; i < path_nodes.size(); ++i) {
+            total_distance += calculateDistance(path_nodes[i-1]->pose, path_nodes[i]->pose);
+        }
+        detailed_path.total_distance = total_distance;
+        detailed_path.total_time = total_distance / 10.0; // 평균 속도 10m/s 가정
+        
+        // Convert path nodes to MapNode messages
+        detailed_path.path_data.nodes.clear();
+        for (size_t i = 0; i < path_nodes.size(); ++i) {
+            gmserver::msg::MapNode map_node;
+            
+            int node_idx = path_nodes[i]->id;
+            
+            // Temporary nodes에 대한 처리
+            if (node_idx == temp_start_node_id_) {
+                map_node.id = "GPS_START";
+                map_node.remark = "Temporary start node from GPS position";
+            } else if (node_idx == temp_goal_node_id_) {
+                map_node.id = "GPS_GOAL";
+                map_node.remark = "Temporary goal node from RViz goal";
+            } else if (node_idx >= 0 && node_idx < static_cast<int>(graph_map_.map_data.nodes.size())) {
+                // 실제 맵 노드에서 정보 복사
+                map_node = graph_map_.map_data.nodes[node_idx];
+            } else {
+                // Fallback for unknown nodes
+                map_node.id = "NODE_" + std::to_string(node_idx);
+                map_node.remark = "Unknown node";
+            }
+            
+            // UTM 좌표는 그대로 유지 (visualization용은 따로 조정됨)
+            if (node_idx >= 0 && node_idx < static_cast<int>(graph_map_.map_data.nodes.size()) &&
+                node_idx != temp_start_node_id_ && node_idx != temp_goal_node_id_) {
+                // 실제 맵 노드의 경우 원본 GPS/UTM 정보 유지
+                map_node.gps_info = graph_map_.map_data.nodes[node_idx].gps_info;
+                map_node.utm_info = graph_map_.map_data.nodes[node_idx].utm_info;
+            } else {
+                // Temporary 노드의 경우 pose에서 역산
+                map_node.gps_info.lat = 0.0; // GPS 역변환은 복잡하므로 생략
+                map_node.gps_info.longitude = 0.0;
+                map_node.gps_info.alt = path_nodes[i]->pose.position.z;
+                map_node.utm_info.easting = path_nodes[i]->pose.position.x;
+                map_node.utm_info.northing = path_nodes[i]->pose.position.y;
+                map_node.utm_info.zone = "52N"; // K-City 기본 zone
+            }
+            
+            detailed_path.path_data.nodes.push_back(map_node);
+        }
+        
+        // Create links between consecutive path nodes
+        detailed_path.path_data.links.clear();
+        for (size_t i = 1; i < path_nodes.size(); ++i) {
+            gmserver::msg::MapLink map_link;
+            
+            int from_node_idx = path_nodes[i-1]->id;
+            int to_node_idx = path_nodes[i]->id;
+            
+            // Set link metadata
+            map_link.id = "PATH_LINK_" + std::to_string(i-1) + "_" + std::to_string(i);
+            map_link.from_node_id = detailed_path.path_data.nodes[i-1].id;
+            map_link.to_node_id = detailed_path.path_data.nodes[i].id;
+            
+            // Calculate link length
+            double distance = calculateDistance(path_nodes[i-1]->pose, path_nodes[i]->pose);
+            map_link.length = distance / 1000.0; // Convert to km
+            
+            // Try to find existing link in graph for more details
+            bool found_existing_link = false;
+            if (from_node_idx >= 0 && from_node_idx < static_cast<int>(graph_map_.map_data.nodes.size()) &&
+                to_node_idx >= 0 && to_node_idx < static_cast<int>(graph_map_.map_data.nodes.size()) &&
+                from_node_idx != temp_start_node_id_ && from_node_idx != temp_goal_node_id_ &&
+                to_node_idx != temp_start_node_id_ && to_node_idx != temp_goal_node_id_) {
+                
+                std::string from_id = graph_map_.map_data.nodes[from_node_idx].id;
+                std::string to_id = graph_map_.map_data.nodes[to_node_idx].id;
+                
+                // Find existing link in GraphMap
+                for (const auto& original_link : graph_map_.map_data.links) {
+                    if ((original_link.from_node_id == from_id && original_link.to_node_id == to_id) ||
+                        (original_link.from_node_id == to_id && original_link.to_node_id == from_id)) {
+                        // Copy original link information
+                        map_link = original_link;
+                        // Ensure correct direction
+                        map_link.from_node_id = from_id;
+                        map_link.to_node_id = to_id;
+                        found_existing_link = true;
+                        break;
+                    }
+                }
+            }
+            
+            // If no existing link found, use calculated data
+            if (!found_existing_link) {
+                map_link.admin_code = "PATH";
+                map_link.road_rank = 1;
+                map_link.road_type = 1;
+                map_link.link_type = 3;
+                map_link.lane_no = 2;
+                map_link.maker = "Path Planner";
+                map_link.remark = "Generated path link";
+            }
+            
+            detailed_path.path_data.links.push_back(map_link);
+        }
+        
+        RCLCPP_DEBUG(this->get_logger(), 
+                    "Created detailed path: %zu nodes, %zu links, total distance: %.2f m",
+                    detailed_path.path_data.nodes.size(), detailed_path.path_data.links.size(), total_distance);
+        
+        return detailed_path;
+    }
+    
     void publishMapToOdomTransform(const sensor_msgs::msg::NavSatFix& gps)
     {
         // Convert GPS to UTM coordinates
@@ -866,17 +1043,23 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_subscriber_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_subscriber_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_publisher_;
+    rclcpp::Publisher<scv_global_planner::msg::PlannedPath>::SharedPtr planned_path_publisher_;
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr nodes_publisher_;
     rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr links_publisher_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr map_viz_publisher_;
     rclcpp::TimerBase::SharedPtr timer_;
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
     
+    // GraphMap data from gmserver
+    gmserver::msg::GraphMap graph_map_;
+    
+    // Converted data for compatibility with existing visualization
     geometry_msgs::msg::PoseArray map_nodes_;
     geometry_msgs::msg::PoseArray map_links_;
     std::vector<std::string> node_ids_;
-    std::vector<int32_t> link_from_indices_;
-    std::vector<int32_t> link_to_indices_;
+    
+    // Node ID to index mapping for efficient lookup
+    std::unordered_map<std::string, int> node_id_to_index_;
     
     // GPS, IMU and Goal state
     sensor_msgs::msg::NavSatFix current_gps_;
